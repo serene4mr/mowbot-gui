@@ -12,8 +12,17 @@ ENV DISPLAY=:0
 # These are critical for the ESRI Maps (Chromium-based) to render correctly
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
+    libevent-2.1-7 \
+    libegl1 \
+    libgl1-mesa-dri \
     libgl1-mesa-glx \
     libglib2.0-0 \
+    mesa-vulkan-drivers \
+    libminizip1 \
+    libopus0 \
+    libtiff5 \
+    libwebpdemux2 \
+    libwebpmux3 \
     libx11-xcb1 \
     libxcb-icccm4 \
     libxcb-image0 \
@@ -31,7 +40,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxtst6 \
     libxcomposite1 \
     libxdamage1 \
+    libxkbfile1 \
     libxrandr2 \
+    libxml2 \
+    libxslt1.1 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 3. Set the working directory
