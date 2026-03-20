@@ -6,18 +6,18 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
-class MowbotGUI(QMainWindow):
+class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Mowbot Control GUMI")
+        self.setWindowTitle("Mowbot Control")
         self.resize(1280, 800)
         self.setStyleSheet("QMainWindow { background-color: #121212; }")
 
         # ==========================================
-        # LAYER 1: BẢN ĐỒ NỀN (BACKGROUND MAP)
+        # LAYER 1: BACKGROUND MAP
         # ==========================================
         self.map_view = QWebEngineView(self)
-        # Tạm thời dùng HTML placeholder thay cho ESRI Map thực tế
+        # Temporary HTML placeholder instead of a real ESRI map
         self.map_view.setHtml("""
             <body style='background-color:#1e1e1e; color:#555; display:flex; 
             justify-content:center; align-items:center; height:100vh; margin:0; font-family:sans-serif;'>
@@ -40,7 +40,7 @@ class MowbotGUI(QMainWindow):
         self.setup_right_sidebar()
 
     # ---------------------------------------------------------
-    # THIẾT LẬP LEFT HUD
+    # SET UP LEFT HUD
     # ---------------------------------------------------------
     def setup_left_hud(self):
         layout = QVBoxLayout(self.hud_panel)
@@ -60,16 +60,16 @@ class MowbotGUI(QMainWindow):
             lbl.setStyleSheet("font-size: 15px; font-family: monospace;")
             layout.addWidget(lbl)
 
-        layout.addStretch() # Đẩy mọi thứ lên trên
+        layout.addStretch() # Push all content to the top
 
     # ---------------------------------------------------------
-    # THIẾT LẬP RIGHT SIDEBAR (3 TABS)
+    # SET UP RIGHT SIDEBAR (3 TABS)
     # ---------------------------------------------------------
     def setup_right_sidebar(self):
         main_layout = QVBoxLayout(self.sidebar_panel)
         main_layout.setContentsMargins(15, 15, 15, 15)
 
-        # --- 1. MENU CHUYỂN TAB ---
+        # --- 1. TAB SWITCH MENU ---
         tab_layout = QHBoxLayout()
         self.btn_tab_set = QPushButton("SET")
         self.btn_tab_tch = QPushButton("TCH")
@@ -84,13 +84,13 @@ class MowbotGUI(QMainWindow):
             btn.setCheckable(True)
             tab_layout.addWidget(btn)
         
-        self.btn_tab_set.setChecked(True) # Mặc định chọn SET
+        self.btn_tab_set.setChecked(True) # SET is selected by default
         main_layout.addLayout(tab_layout)
 
         # --- 2. QSTACKEDWIDGET (DYNAMIC AREA) ---
         self.stacked_widget = QStackedWidget()
         
-        # Trang 1: SET (Setup)
+        # Page 1: SET (Setup)
         page_set = QWidget()
         layout_set = QVBoxLayout(page_set)
         self.btn_start_system = QPushButton("🚀 START SYSTEM")
@@ -104,7 +104,7 @@ class MowbotGUI(QMainWindow):
         layout_set.addStretch()
         self.stacked_widget.addWidget(page_set)
 
-        # Trang 2: TCH (Teach-In)
+        # Page 2: TCH (Teach-In)
         page_tch = QWidget()
         layout_tch = QVBoxLayout(page_tch)
         layout_tch.addWidget(QLabel("TYPE: [ PATH ] | [ POLY ]"))
@@ -125,7 +125,7 @@ class MowbotGUI(QMainWindow):
         layout_tch.addStretch()
         self.stacked_widget.addWidget(page_tch)
 
-        # Trang 3: RUN (Auto-Run)
+        # Page 3: RUN (Auto-Run)
         page_run = QWidget()
         layout_run = QVBoxLayout(page_run)
         
@@ -150,7 +150,7 @@ class MowbotGUI(QMainWindow):
 
         main_layout.addWidget(self.stacked_widget)
 
-        # --- 3. PHẦN TĨNH: NÚT E-STOP KHỔNG LỒ ---
+        # --- 3. STATIC SECTION: LARGE E-STOP BUTTON ---
         self.btn_estop = QPushButton("EMERGENCY STOP")
         self.btn_estop.setStyleSheet("""
             QPushButton { background-color: #D50000; color: white; font-size: 18px; font-weight: bold; padding: 25px; border-radius: 8px; }
@@ -158,7 +158,7 @@ class MowbotGUI(QMainWindow):
         """)
         main_layout.addWidget(self.btn_estop)
 
-        # --- KẾT NỐI TÍN HIỆU (SIGNALS) ---
+        # --- CONNECT SIGNALS ---
         self.btn_tab_set.clicked.connect(lambda: self.switch_tab(0))
         self.btn_tab_tch.clicked.connect(lambda: self.switch_tab(1))
         self.btn_tab_run.clicked.connect(lambda: self.switch_tab(2))
@@ -166,17 +166,17 @@ class MowbotGUI(QMainWindow):
         self.btn_save.clicked.connect(self.show_save_dialog)
 
     # ---------------------------------------------------------
-    # LOGIC XỬ LÝ SỰ KIỆN
+    # EVENT HANDLING LOGIC
     # ---------------------------------------------------------
     def switch_tab(self, index):
-        """Chuyển đổi QStackedWidget và cập nhật UI của nút Tab"""
+        """Switch QStackedWidget and update tab button UI state."""
         self.stacked_widget.setCurrentIndex(index)
         self.btn_tab_set.setChecked(index == 0)
         self.btn_tab_tch.setChecked(index == 1)
         self.btn_tab_run.setChecked(index == 2)
 
     def toggle_system(self):
-        """Mô phỏng đổi trạng thái nút Start/Shutdown"""
+        """Simulate toggling the Start/Shutdown button state."""
         if "START" in self.btn_start_system.text():
             self.btn_start_system.setText("🛑 SHUTDOWN SYSTEM")
             self.btn_start_system.setStyleSheet("background-color: #D50000; color: white; font-size: 16px; font-weight: bold; padding: 20px; border-radius: 8px;")
@@ -185,25 +185,25 @@ class MowbotGUI(QMainWindow):
             self.btn_start_system.setStyleSheet("background-color: #2962FF; color: white; font-size: 16px; font-weight: bold; padding: 20px; border-radius: 8px;")
 
     def show_save_dialog(self):
-        """Mô phỏng hiện cửa sổ lưu và tự động nhảy sang Tab RUN"""
+        """Simulate showing a save dialog and automatically switch to RUN."""
         QMessageBox.information(self, "Save Mission", "Mission 'Lawn_Zone_A_01' saved successfully!\n\nSwitching to AUTO-RUN mode.")
-        self.switch_tab(2) # Tự động lật sang Tab RUN
+        self.switch_tab(2) # Automatically switch to the RUN tab
 
     # ---------------------------------------------------------
-    # ĐỊNH VỊ CÁC BẢNG NỔI (ABSOLUTE POSITIONING)
+    # POSITION FLOATING PANELS (ABSOLUTE POSITIONING)
     # ---------------------------------------------------------
     def resizeEvent(self, event):
-        """Đảm bảo HUD và Sidebar luôn bám đúng vị trí khi resize cửa sổ"""
+        """Keep HUD and Sidebar correctly positioned when resizing the window."""
         super().resizeEvent(event)
         w, h = self.width(), self.height()
         margin = 20
         
-        # Cố định Left HUD bên trái
+        # Keep the Left HUD fixed on the left side
         hud_width = 250
         hud_height = 200
         self.hud_panel.setGeometry(margin, margin, hud_width, hud_height)
 
-        # Cố định Right Sidebar bên phải, kéo dài từ trên xuống dưới
+        # Keep the Right Sidebar fixed on the right, spanning top to bottom
         sidebar_width = 350
         self.sidebar_panel.setGeometry(w - sidebar_width - margin, margin, sidebar_width, h - (margin * 2))
 
