@@ -1,0 +1,12 @@
+# GUI Framework
+PySide6==6.6.1
+
+# Communication
+paho-mqtt==2.1.0
+git+https://github.com/zeki-aitech/vda5050_client.git
+
+# Infrastructure Control
+docker==7.0.0
+
+# Configuration
+pyyaml==6.0.1
