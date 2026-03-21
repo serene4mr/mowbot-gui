@@ -96,6 +96,8 @@ class MainWindow(QMainWindow):
         self, x: float, y: float, theta_deg: float, speed_mps: float
     ) -> None:
         self.hud_panel.update_telemetry(x, y, theta_deg, speed_mps)
+        # VDA position uses x=lon, y=lat; Leaflet expects [lat, lon].
+        self.map_view.update_robot_marker(lat=y, lon=x, heading_deg=theta_deg)
 
     def _on_vda_status(self, msg: str) -> None:
         # Avoid spamming unchanged status lines every state tick.

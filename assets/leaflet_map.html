@@ -15,6 +15,11 @@
 <body>
     <div id="map"></div>
     <script>
+        const TRACK_ZOOM = 19;
+        const HEADING_OFFSET_DEG = 180;
+        const MOWBOT_ARROW_SVG =
+            '<svg width="30" height="30" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 5 L90 90 L50 70 L10 90 L50 5 Z" fill="#00ff88" stroke="#ffffff" stroke-width="2"/></svg>';
+
         var map = L.map('map', {
             zoomControl: true,
             dragging: true,
@@ -33,15 +38,24 @@
         console.log("Leaflet loaded ESRI Satellite tiles successfully (WebGL bypassed)!");
 
         var robotMarker = null;
-        function updateRobotPosition(lat, lng) {
+        function updateRobotPosition(lat, lng, headingDeg) {
+            const markerHeading = (headingDeg || 0) + HEADING_OFFSET_DEG;
             if (!robotMarker) {
-                robotMarker = L.circleMarker([lat, lng], {
-                    color: '#00E676', radius: 8, fillOpacity: 1
-                }).addTo(map);
+                const icon = L.divIcon({
+                    className: 'mowbot-arrow-icon',
+                    html: `<div id="mowbot-arrow" style="width:30px;height:30px;transform: rotate(${markerHeading}deg);transform-origin: 50% 50%;">${MOWBOT_ARROW_SVG}</div>`,
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 15],
+                });
+                robotMarker = L.marker([lat, lng], { icon: icon }).addTo(map);
             } else {
                 robotMarker.setLatLng([lat, lng]);
+                const arrow = document.getElementById('mowbot-arrow');
+                if (arrow) {
+                    arrow.style.transform = `rotate(${markerHeading}deg)`;
+                }
             }
-            map.panTo([lat, lng]);
+            map.setView([lat, lng], TRACK_ZOOM, { animate: false });
         }
     </script>
 </body>

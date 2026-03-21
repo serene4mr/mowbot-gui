@@ -63,12 +63,13 @@ class MapView(QWebEngineView):
         local_url = QUrl.fromLocalFile(html_path)
         self.load(local_url)
 
-    def update_robot_marker(self, x: float, y: float, theta: float) -> None:
-        """Send coordinates to JS to move the robot graphic (QWebChannel / runJavaScript)."""
-        # Example:
-        # js_code = f"moveRobotMarker({x}, {y}, {theta});"
-        # self.page().runJavaScript(js_code)
-        pass
+    def update_robot_marker(self, lat: float, lon: float, heading_deg: float) -> None:
+        """Update robot marker and keep map centered at fixed zoom."""
+        js_code = (
+            "if (typeof updateRobotPosition === 'function') "
+            f"{{ updateRobotPosition({lat}, {lon}, {heading_deg}); }}"
+        )
+        self.page().runJavaScript(js_code)
 
     def draw_polygon(self, points: Sequence[tuple[float, float]]) -> None:
         """Send vertices to JS to render a mowing/teach-in area."""
