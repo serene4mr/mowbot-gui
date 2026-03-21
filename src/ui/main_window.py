@@ -5,7 +5,9 @@ from typing import Any, Dict, Optional
 
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QCloseEvent
 
+from core.vda_bridge import VDA5050BridgeThread
 from ui.components.map_view import MapView
 from ui.components.top_bar import TopBar
 from ui.components.left_hud import LeftHUD
@@ -33,6 +35,10 @@ class MainWindow(QMainWindow):
         self.hud_panel = LeftHUD(self)
         self.sidebar_panel = RightSidebar(self)
 
+        self._last_battery_pct: Optional[float] = None
+        self._mqtt_ok = False
+        self._vda_bridge: Optional[VDA5050BridgeThread] = None
+
         serial = self.config.get("general", {}).get("serial_number")
         if serial:
             serial_text = str(serial).strip()
@@ -43,6 +49,53 @@ class MainWindow(QMainWindow):
             self.top_bar.set_robot_id(robot_id)
 
         self._connect_components()
+        self._start_vda_bridge()
+
+    def _start_vda_bridge(self) -> None:
+        g = self.config.get("general", {})
+        b = self.config.get("broker", {})
+        host = str(b.get("host", "localhost"))
+        port = int(b.get("port", 1883))
+        serial = str(g.get("serial_number", "default"))
+        manufacturer = str(g.get("manufacturer", "MowbotTech"))
+
+        self._vda_bridge = VDA5050BridgeThread(
+            host=host,
+            port=port,
+            serial_number=serial,
+            manufacturer=manufacturer,
+        )
+        self._vda_bridge.connection_status.connect(self._on_mqtt_connection)
+        self._vda_bridge.battery_updated.connect(self._on_battery)
+        self._vda_bridge.position_updated.connect(self._on_vda_position)
+        self._vda_bridge.error_updated.connect(
+            lambda msg: print(f"[VDA] {msg}")
+        )
+        self._vda_bridge.start()
+        print(
+            f"[VDA] Bridge thread started (broker {host}:{port}, "
+            f"robot serial={serial}, manufacturer={manufacturer})"
+        )
+
+    def _on_mqtt_connection(self, connected: bool) -> None:
+        self._mqtt_ok = connected
+        print(f"[MQTT] {'connected' if connected else 'disconnected'}")
+        self._refresh_status_line()
+
+    def _on_battery(self, pct: float) -> None:
+        self._last_battery_pct = pct
+        self._refresh_status_line()
+
+    def _refresh_status_line(self) -> None:
+        bat = self._last_battery_pct
+        bat_s = f"{bat:.0f}%" if bat is not None else "--"
+        mqtt_s = "OK" if self._mqtt_ok else "OFF"
+        self.top_bar.set_status_line(f"GPS: -- | BAT: {bat_s} | MQTT: {mqtt_s}")
+
+    def _on_vda_position(
+        self, x: float, y: float, theta_deg: float, speed_mps: float
+    ) -> None:
+        self.hud_panel.update_telemetry(x, y, theta_deg, speed_mps)
 
     def _connect_components(self):
         self.sidebar_panel.tab_changed.connect(self._on_tab_changed)
@@ -68,6 +121,8 @@ class MainWindow(QMainWindow):
 
     def _on_estop(self):
         print("CRITICAL: E-STOP PRESSED!")
+        if self._vda_bridge is not None:
+            self._vda_bridge.trigger_estop()
 
     def _on_start_system_state_changed(self, is_running: bool):
         # Hook for MQTT / robot power commands
@@ -81,6 +136,12 @@ class MainWindow(QMainWindow):
 
     def _on_execute_mission(self):
         print("EXECUTE MISSION")
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        if self._vda_bridge is not None:
+            self._vda_bridge.stop()
+            self._vda_bridge = None
+        super().closeEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

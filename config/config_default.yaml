@@ -1,12 +1,13 @@
 # General Application Settings
+# MQTT state topic shape: uagv/v2/<manufacturer>/<serial>/state  e.g. uagv/v2/MowbotTech/mowbot_001/state
 general:
   manufacturer: "MowbotTech"      # Default manufacturer for VDA5050 topics
-  serial_number: "default"    # Default serial if not specified
+  serial_number: "mowbot_001"  # Robot AGV serial (must match VDA 5050 state topic / payload)
 
 # MQTT Broker Settings
 # Note: In production, these are often overridden by encrypted DB or Env Vars
 broker:
-  host: "localhost"           # MQTT broker hostname
+  host: "localhost"           # Deploy: broker on same machine. LAN lab test: override via config_local.yaml or MOWBOT_MQTT_HOST
   port: 1883                  # MQTT broker port (8883 for HiveMQ TLS)
   use_tls: false              # Set to true for HiveMQ Cloud
   user: ""                    # MQTT username

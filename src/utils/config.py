@@ -27,7 +27,7 @@ def load_config() -> Dict[str, Any]:
     if not os.path.exists(default_path):
         # Create a basic default dict if the file is missing
         config = {
-            "general": {"manufacturer": "MowbotTech", "serial_number": "default"},
+            "general": {"manufacturer": "MowbotTech", "serial_number": "mowbot_001"},
             "broker": {"host": "localhost", "port": 1883, "use_tls": False}
         }
     else:

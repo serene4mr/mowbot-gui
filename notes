@@ -1,0 +1,11 @@
+localhost is not the same everywhere
+
+On the host PC, localhost:1883 is the Mosquitto on that machine.
+Inside a container, localhost is the container itself, not the host — so the app had to use the host’s address (e.g. Docker bridge 172.17.0.1) or the LAN IP, not localhost.
+“Connection refused” to 192.168.x.x while localhost worked
+
+Mosquitto was only listening on 127.0.0.1:1883 (loopback).
+Nothing was accepting connections on the LAN IP, so remote clients got refused.
+Fix: add listener 1883 0.0.0.0 (or the specific LAN IP) so the broker listens on all interfaces.
+
+

@@ -1,5 +1,6 @@
 # src/core/vda_bridge.py
 import asyncio
+import math
 import uuid
 from datetime import datetime, timezone
 
@@ -17,22 +18,30 @@ class VDA5050BridgeThread(QThread):
     # ==========================================
     connection_status = Signal(bool)
     battery_updated = Signal(float)
-    position_updated = Signal(float, float, float) # x, y, theta
+    # x, y, theta_deg (for HUD), speed_m/s (planar from velocity vx/vy)
+    position_updated = Signal(float, float, float, float)
     mode_updated = Signal(str)                     # e.g., 'AUTOMATIC', 'MANUAL'
     driving_status = Signal(bool)                  # True if moving, False if stopped
     safety_updated = Signal(str)                   # e.g., 'NONE', 'AUTOACK', 'MANUAL'
     error_updated = Signal(str)                    # Contains the most severe error description
 
-    def __init__(self, host: str, port: int, serial_number: str):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        serial_number: str,
+        manufacturer: str = "MowbotTech",
+    ):
         super().__init__()
         self.host = host
         self.port = port
         self.serial_number = serial_number
-        self.manufacturer = "jisan"
+        self.manufacturer = manufacturer
         
         self.client = None
         self._is_running = True
         self._loop = None
+        self._logged_first_state = False
 
     def run(self):
         """Executed automatically by QThread. Runs in a background thread."""
@@ -60,8 +69,8 @@ class VDA5050BridgeThread(QThread):
 
         try:
             print(f"[VDA Bridge] Connecting to MQTT Broker {self.host}:{self.port}...")
-            await self.client.connect()
-            self.connection_status.emit(True)
+            success = await self.client.connect()
+            self.connection_status.emit(success)
 
             # Keep the async loop alive
             while self._is_running:
@@ -74,24 +83,42 @@ class VDA5050BridgeThread(QThread):
             if self.client and self.client.is_connected():
                 await self.client.disconnect()
 
+    @staticmethod
+    def _norm_serial(s: str) -> str:
+        return (s or "").strip().lower()
+
     def _on_state_received(self, serial: str, state: State):
         """
         Callback triggered by the vda5050_client. 
         'state' is the validated Pydantic model containing all AGV telemetry.
         """
-        if serial != self.serial_number:
+        if self._norm_serial(serial) != self._norm_serial(self.serial_number):
             return
+
+        if not self._logged_first_state:
+            ap = state.agvPosition
+            print(
+                "[VDA Bridge] First state received: "
+                f"agvPosition={'yes' if ap else 'no'}, "
+                f"positionInitialized={getattr(ap, 'positionInitialized', None) if ap else 'n/a'}"
+            )
+            self._logged_first_state = True
 
         # 1. Battery State
         if state.batteryState:
             self.battery_updated.emit(state.batteryState.batteryCharge)
-            
-        # 2. Position (Only emit if initialized)
-        if state.agvPosition and getattr(state.agvPosition, 'positionInitialized', False):
-            x = state.agvPosition.x
-            y = state.agvPosition.y
-            theta = getattr(state.agvPosition, 'theta', 0.0)
-            self.position_updated.emit(x, y, theta)
+
+        # 2. Position + speed for HUD
+        ap = state.agvPosition
+        if ap is not None and ap.positionInitialized:
+            theta_rad = ap.theta
+            theta_deg = math.degrees(theta_rad) if theta_rad is not None else 0.0
+            vx = vy = 0.0
+            if state.velocity is not None:
+                vx = state.velocity.vx or 0.0
+                vy = state.velocity.vy or 0.0
+            speed = math.hypot(vx, vy)
+            self.position_updated.emit(ap.x, ap.y, theta_deg, speed)
 
         # 3. Operating Mode
         if state.operatingMode:
@@ -105,7 +132,7 @@ class VDA5050BridgeThread(QThread):
             self.safety_updated.emit(state.safetyState.eStop.value)
 
         # 6. Error Handling
-        if state.errors and len(state.errors) > 0:
+        if state.errors:
             # Prioritize FATAL errors for the GUI warning banner
             fatal_errors = [e for e in state.errors if e.errorLevel.value == 'FATAL']
             if fatal_errors:
