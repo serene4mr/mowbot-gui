@@ -48,6 +48,8 @@ class MainWindow(QMainWindow):
 
         self._last_auto_distance_log_mono: float = 0.0
         self._mission_preview_filename: Optional[str] = None
+        self._latest_status_line: str = "GPS: FIX  |  BAT: --  |  MQTT: OFF"
+        self._error_active: bool = False
 
         self._app_state = AppState(
             self,
@@ -163,7 +165,7 @@ class MainWindow(QMainWindow):
 
     def _connect_state(self) -> None:
         s = self._app_state
-        s.status_line_changed.connect(self.top_bar.set_status_line)
+        s.status_line_changed.connect(self._on_status_line)
         s.mode_changed.connect(lambda m: self.top_bar.set_mode(f"MODE: {m}"))
         s.position_changed.connect(self.hud_panel.update_telemetry)
         s.position_changed.connect(self._update_map_marker)
@@ -186,8 +188,19 @@ class MainWindow(QMainWindow):
     ) -> None:
         self.map_view.update_robot_marker(lat=y, lon=x, heading_deg=theta_deg)
 
+    def _on_status_line(self, text: str) -> None:
+        self._latest_status_line = text
+        if not self._error_active:
+            self.top_bar.set_status_line(text)
+
     def _on_error(self, msg: str) -> None:
         logger.info(f"[VDA] {msg}")
+        if msg == "ALL CLEAR":
+            self._error_active = False
+            self.top_bar.set_status_line(self._latest_status_line)
+            return
+        self._error_active = True
+        self.top_bar.set_error_line(msg)
 
     def _on_tch_mode_map_visual(self, mode: str) -> None:
         self.map_view.set_teach_recording_poly_mode(str(mode).upper() == "POLY")

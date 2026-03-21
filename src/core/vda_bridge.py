@@ -183,7 +183,7 @@ class VDA5050BridgeThread(QThread):
     async def _send_estop(self) -> None:
         logger.warning("Initiating Emergency Stop sequence")
         action = Action(
-            actionType="stop",
+            actionType="emergencyStop",
             actionId=str(uuid.uuid4()),
             blockingType=BlockingType.HARD,
             actionParameters=[],
