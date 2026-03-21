@@ -38,6 +38,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxkbcommon-x11-0 \
     libdbus-1-3 \
     libfontconfig1 \
+    fonts-noto-color-emoji \
     libnss3 \
     libasound2 \
     libxtst6 \

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mowbot Leaflet (no WebGL)</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; width: 100%; background: #121212; }
+        #map { height: 100%; width: 100%; }
+        .leaflet-control-attribution { font-size: 10px; background: rgba(0,0,0,0.5) !important; color: #aaa; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <script>
+        // Raster tiles only (DOM <img>) — works when WebGL / GPU is broken (embedded, Docker, bad GLX).
+        var map = L.map('map', { zoomControl: false }).setView([36.11, 128.34], 17);
+        L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            { maxZoom: 19, attribution: '&copy; Esri' }
+        ).addTo(map);
+    </script>
+</body>
+</html>

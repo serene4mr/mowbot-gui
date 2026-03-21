@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mowbot Leaflet Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; background-color: #121212; }
+        #map { height: 100%; width: 100%; background-color: #121212; }
+        .leaflet-control-zoom { display: none !important; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <script>
+        var map = L.map('map', {
+            zoomControl: true,
+            dragging: true,
+            scrollWheelZoom: true,
+            touchZoom: true,
+            doubleClickZoom: true,
+            boxZoom: true,
+            keyboard: true
+        }).setView([36.11, 128.34], 17);
+
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '&copy; <a href="https://www.esri.com/">Esri</a>',
+            maxZoom: 19
+        }).addTo(map);
+
+        console.log("Leaflet loaded ESRI Satellite tiles successfully (WebGL bypassed)!");
+
+        var robotMarker = null;
+        function updateRobotPosition(lat, lng) {
+            if (!robotMarker) {
+                robotMarker = L.circleMarker([lat, lng], {
+                    color: '#00E676', radius: 8, fillOpacity: 1
+                }).addTo(map);
+            } else {
+                robotMarker.setLatLng([lat, lng]);
+            }
+            map.panTo([lat, lng]);
+        }
+    </script>
+</body>
+</html>
