@@ -11,9 +11,10 @@ All state formatting lives in AppState.
 
 from __future__ import annotations
 
+import json
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from PySide6.QtWidgets import QMainWindow, QMessageBox
 from PySide6.QtCore import Qt, QTimer
@@ -46,8 +47,12 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(theme.MAIN_WINDOW_STYLE)
 
         self._last_auto_distance_log_mono: float = 0.0
+        self._mission_preview_filename: Optional[str] = None
 
-        self._app_state = AppState(self)
+        self._app_state = AppState(
+            self,
+            poly_max_close_gap_m=self._teach_poly_max_close_gap_m(),
+        )
 
         # Layer 1: full-screen map background
         self.map_view = MapView(self)
@@ -68,6 +73,7 @@ class MainWindow(QMainWindow):
         self._refresh_mission_files()
         self.sidebar_panel.update_tch_stats(0, -1.0)
         self.sidebar_panel.set_tch_mode_buttons("PATH")
+        self.map_view.set_teach_recording_poly_mode(False)
 
         # VDA controller owns bridge lifecycle and writes into AppState
         self._vda = VDAController(self.config, self._app_state, parent=self)
@@ -80,6 +86,51 @@ class MainWindow(QMainWindow):
     def _missions_dir(self) -> str:
         sub = (self.config.get("missions") or {}).get("directory", "missions")
         return os.path.join(self._project_root(), sub)
+
+    def _teach_poly_max_close_gap_m(self) -> float:
+        t = self.config.get("teach_in") or {}
+        raw = t.get("poly_max_close_gap_m", 5.0)
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return 5.0
+
+    @staticmethod
+    def _parse_mission_json_file(
+        path: str,
+    ) -> Tuple[Optional[str], List[Tuple[float, float]], Optional[str]]:
+        """Returns (type, coordinates as (lat,lon), error_message)."""
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError) as exc:
+            return None, [], f"Could not read mission file: {exc}"
+
+        typ = str(data.get("type", "")).strip().upper()
+        if typ not in ("PATH", "POLY"):
+            return None, [], "Invalid or missing 'type' (expected PATH or POLY)."
+
+        raw_coords = data.get("coordinates")
+        if not isinstance(raw_coords, list) or len(raw_coords) == 0:
+            return None, [], "Missing or empty 'coordinates' array."
+
+        out: List[Tuple[float, float]] = []
+        for i, pair in enumerate(raw_coords):
+            if not isinstance(pair, (list, tuple)) or len(pair) < 2:
+                return None, [], f"Invalid coordinate pair at index {i}."
+            try:
+                lat = float(pair[0])
+                lon = float(pair[1])
+            except (TypeError, ValueError):
+                return None, [], f"Non-numeric coordinate at index {i}."
+            out.append((lat, lon))
+
+        if typ == "PATH" and len(out) < 2:
+            return None, [], "PATH missions need at least 2 coordinates."
+        if typ == "POLY" and len(out) < 3:
+            return None, [], "POLY missions need at least 3 coordinates."
+
+        return typ, out, None
 
     def _safe_mission_path(self, filename: str) -> Optional[str]:
         """Resolve a mission JSON path under missions dir only (no traversal)."""
@@ -124,6 +175,7 @@ class MainWindow(QMainWindow):
         s.tch_point_undone.connect(self._on_tch_point_undone)
         s.tch_cleared.connect(self.map_view.clear_teach_layer)
         s.tch_mode_changed.connect(self.sidebar_panel.set_tch_mode_buttons)
+        s.tch_mode_changed.connect(self._on_tch_mode_map_visual)
         s.tch_stats_changed.connect(self.sidebar_panel.update_tch_stats)
         s.tch_auto_record_changed.connect(self._on_tch_auto_record_state)
         s.tch_error.connect(self._on_tch_error)
@@ -136,6 +188,9 @@ class MainWindow(QMainWindow):
 
     def _on_error(self, msg: str) -> None:
         logger.info(f"[VDA] {msg}")
+
+    def _on_tch_mode_map_visual(self, mode: str) -> None:
+        self.map_view.set_teach_recording_poly_mode(str(mode).upper() == "POLY")
 
     def _on_tch_point_added(self, lat: float, lon: float, _count: int) -> None:
         self.map_view.add_teach_point(lat, lon)
@@ -210,6 +265,7 @@ class MainWindow(QMainWindow):
         sb.tch_session_stopped.connect(self._on_tch_session_stopped)
         sb.execute_mission_requested.connect(self._on_execute_mission)
         sb.delete_mission_requested.connect(self._on_delete_mission)
+        sb.load_mission_preview_requested.connect(self._on_load_mission_preview)
 
     def _on_tab_changed(self, index: int) -> None:
         if self._app_state.operating_mode is None:
@@ -224,8 +280,6 @@ class MainWindow(QMainWindow):
         if err:
             QMessageBox.warning(self, "Teach-In", err)
             return
-        if self._app_state.tch_mode == "POLY":
-            self.map_view.close_polygon()
         _, err2 = self._app_state.teach_save_to_disk(self._missions_dir())
         if err2:
             QMessageBox.warning(self, "Teach-In", err2)
@@ -252,6 +306,28 @@ class MainWindow(QMainWindow):
 
     def _on_execute_mission(self) -> None:
         logger.info("EXECUTE MISSION")
+
+    def _on_load_mission_preview(self) -> None:
+        name = self.sidebar_panel.current_mission_filename()
+        if not name:
+            QMessageBox.information(self, "Load mission", "No mission selected.")
+            return
+        path = self._safe_mission_path(name)
+        if path is None or not os.path.isfile(path):
+            QMessageBox.warning(
+                self,
+                "Load mission",
+                "Invalid mission name or file not found.",
+            )
+            return
+        typ, coords, err = self._parse_mission_json_file(path)
+        if err:
+            QMessageBox.warning(self, "Load mission", err)
+            return
+        assert typ is not None
+        self.map_view.load_mission_preview(typ, coords)
+        self._mission_preview_filename = name
+        logger.info(f"Mission preview on map: {name} ({typ}, {len(coords)} pts)")
 
     def _on_delete_mission(self) -> None:
         name = self.sidebar_panel.current_mission_filename()
@@ -281,6 +357,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Delete mission", str(exc))
             return
         logger.info(f"Deleted mission file: {name}")
+        if self._mission_preview_filename == name:
+            self.map_view.clear_mission_preview()
+            self._mission_preview_filename = None
         self._refresh_mission_files()
         QMessageBox.information(self, "Delete mission", f"Deleted {name}.")
 

@@ -53,10 +53,24 @@ def load_config() -> Dict[str, Any]:
             "user": os.getenv("MOWBOT_MQTT_USER"),
             "password": os.getenv("MOWBOT_MQTT_PASSWORD"),
         },
+        "teach_in": {
+            "poly_max_close_gap_m": _to_float_or_none(
+                os.getenv("MOWBOT_TEACH_POLY_MAX_CLOSE_GAP_M")
+            ),
+        },
     }
     config = deep_merge(config, _drop_nones_recursive(env_override))
 
     return config
+
+
+def _to_float_or_none(value: Any) -> Any:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _to_int_or_none(value: Any) -> Any:

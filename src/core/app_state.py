@@ -43,7 +43,12 @@ class AppState(QObject):
     tch_error = Signal(str)
     tch_session_saved = Signal(str)  # filename only (path_* / poly_* + datetime + .json)
 
-    def __init__(self, parent: Optional[QObject] = None):
+    def __init__(
+        self,
+        parent: Optional[QObject] = None,
+        *,
+        poly_max_close_gap_m: float = 5.0,
+    ):
         super().__init__(parent)
         self._mqtt_ok: bool = False
         self._battery_pct: Optional[float] = None
@@ -60,6 +65,11 @@ class AppState(QObject):
         self._tch_mode: str = "PATH"
         self._tch_points: List[Tuple[float, float]] = []
         self._tch_auto_record: bool = False
+        # POLY save: reject if first/last points farther than this (meters); <=0 disables
+        try:
+            self._poly_max_close_gap_m = float(poly_max_close_gap_m)
+        except (TypeError, ValueError):
+            self._poly_max_close_gap_m = 5.0
 
     # ── Read-only properties ──────────────────────────────────
 
@@ -188,6 +198,19 @@ class AppState(QObject):
             return "PATH requires at least 2 waypoints."
         if self._tch_mode == "POLY" and len(self._tch_points) < 3:
             return "POLY requires at least 3 waypoints."
+        if (
+            self._tch_mode == "POLY"
+            and self._poly_max_close_gap_m > 0
+            and len(self._tch_points) >= 3
+        ):
+            first = self._tch_points[0]
+            last = self._tch_points[-1]
+            gap_m = haversine_distance_m(first, last)
+            if gap_m > self._poly_max_close_gap_m:
+                return (
+                    f"POLY cannot be saved: first and last point are {gap_m:.1f} m apart "
+                    f"(max {self._poly_max_close_gap_m:.1f} m to close the loop)."
+                )
         return None
 
     def teach_save_to_disk(self, missions_dir: str) -> Tuple[Optional[str], str]:

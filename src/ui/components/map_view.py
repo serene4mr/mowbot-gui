@@ -8,9 +8,11 @@ Supports two backends (selected via MOWBOT_MAP_BACKEND env var):
 from __future__ import annotations
 
 import html
+import json
 import os
+from typing import List, Optional, Tuple
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, Slot
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
@@ -22,11 +24,14 @@ class MapView(QWebEngineView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._teach_recording_poly: bool = False
+        self._last_mission_preview: Optional[Tuple[str, List[Tuple[float, float]]]] = None
         settings = self.settings()
         settings.setAttribute(
             QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True
         )
         settings.setAttribute(QWebEngineSettings.WebAttribute.WebGLEnabled, True)
+        self.loadFinished.connect(self._on_load_finished)
         self.setup_map()
 
     # ── Map loading ───────────────────────────────────────────
@@ -69,6 +74,52 @@ class MapView(QWebEngineView):
             )
 
         self.load(QUrl.fromLocalFile(html_path))
+
+    @Slot(bool)
+    def _on_load_finished(self, ok: bool) -> None:
+        if ok:
+            self._push_teach_recording_poly_js()
+            self._push_mission_preview_js()
+
+    def set_teach_recording_poly_mode(self, is_poly: bool) -> None:
+        """PATH vs POLY: POLY shows live fill when there are ≥3 teach points."""
+        self._teach_recording_poly = bool(is_poly)
+        self._push_teach_recording_poly_js()
+
+    def _push_teach_recording_poly_js(self) -> None:
+        p = "true" if self._teach_recording_poly else "false"
+        js = (
+            "if (typeof setTeachRecordingMode === 'function') "
+            f"{{ setTeachRecordingMode({p}); }}"
+        )
+        self.page().runJavaScript(js)
+
+    def clear_mission_preview(self) -> None:
+        """Remove RUN-tab mission overlay from the map."""
+        self._last_mission_preview = None
+        self.page().runJavaScript(
+            "if (typeof clearMissionPreview === 'function') { clearMissionPreview(); }"
+        )
+
+    def load_mission_preview(
+        self, mission_type: str, coordinates: List[Tuple[float, float]]
+    ) -> None:
+        """Draw saved PATH/POLY on map (orange); replaces any previous preview."""
+        mt = str(mission_type).upper()
+        self._last_mission_preview = (mt, list(coordinates))
+        self._push_mission_preview_js()
+
+    def _push_mission_preview_js(self) -> None:
+        if self._last_mission_preview is None:
+            return
+        typ, coords = self._last_mission_preview
+        typ_js = json.dumps(typ)
+        coords_js = json.dumps([[lat, lon] for lat, lon in coords])
+        js = (
+            "if (typeof setMissionPreview === 'function') "
+            f"{{ setMissionPreview({typ_js}, {coords_js}); }}"
+        )
+        self.page().runJavaScript(js)
 
     # ── JS bridge (Python → JavaScript) ──────────────────────
     #

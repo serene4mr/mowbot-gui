@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStackedWidget,
     QComboBox,
-    QProgressBar,
     QWidget,
     QMessageBox,
     QGraphicsOpacityEffect,
@@ -37,6 +36,7 @@ class RightSidebar(QFrame):
     tch_session_stopped = Signal()
     execute_mission_requested = Signal()
     delete_mission_requested = Signal()
+    load_mission_preview_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -176,6 +176,12 @@ class RightSidebar(QFrame):
         layout.addWidget(QLabel("Select Mission:"))
         layout.addWidget(self.combo_mission)
 
+        self.btn_load_mission = QPushButton("LOAD ON MAP")
+        self.btn_load_mission.setStyleSheet(
+            theme.action_button_style(bg=theme.ACCENT_ORANGE, bold=True)
+        )
+        layout.addWidget(self.btn_load_mission)
+
         self.btn_delete_mission = QPushButton("DELETE MISSION")
         self.btn_delete_mission.setStyleSheet(
             theme.action_button_style(bg=theme.ACCENT_RED, bold=True)
@@ -183,13 +189,6 @@ class RightSidebar(QFrame):
         layout.addWidget(self.btn_delete_mission)
 
         layout.addWidget(self.btn_execute)
-        layout.addWidget(QLabel("\nProgress: 65%"))
-
-        self.mission_progress = QProgressBar()
-        self.mission_progress.setValue(65)
-        layout.addWidget(self.mission_progress)
-
-        layout.addWidget(QLabel("Action: MOWING"))
         layout.addStretch()
         return page
 
@@ -209,6 +208,7 @@ class RightSidebar(QFrame):
         self.btn_tch_toggle.clicked.connect(self._on_tch_toggle_clicked)
         self.btn_execute.clicked.connect(self.execute_mission_requested.emit)
         self.btn_delete_mission.clicked.connect(self.delete_mission_requested.emit)
+        self.btn_load_mission.clicked.connect(self.load_mission_preview_requested.emit)
 
     def _on_path_mode(self) -> None:
         self.btn_tch_path.setChecked(True)
@@ -302,6 +302,7 @@ class RightSidebar(QFrame):
         for name in names:
             self.combo_mission.addItem(name)
         self.btn_delete_mission.setEnabled(len(names) > 0)
+        self.btn_load_mission.setEnabled(len(names) > 0)
 
     def current_mission_filename(self) -> Optional[str]:
         text = self.combo_mission.currentText().strip()

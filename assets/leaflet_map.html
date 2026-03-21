@@ -58,13 +58,19 @@
             map.setView([lat, lng], TRACK_ZOOM, { animate: false });
         }
 
-        // ── Teach-in overlay (PATH polyline / POLY polygon) ─────────────
+        // ── Teach-in overlay (PATH: polyline only; POLY: filled polygon when ≥3 points) ─
         var teachGroup = L.layerGroup().addTo(map);
         var teachMarkers = [];
         var teachPolyline = null;
         var teachPolygon = null;
+        var teachIsPoly = false;
 
-        function _rebuildTeachPolyline() {
+        function setTeachRecordingMode(isPoly) {
+            teachIsPoly = !!isPoly;
+            _rebuildTeachGeometry();
+        }
+
+        function _rebuildTeachGeometry() {
             if (teachPolyline) {
                 teachGroup.removeLayer(teachPolyline);
                 teachPolyline = null;
@@ -74,16 +80,24 @@
                 teachPolygon = null;
             }
             const ll = teachMarkers.map(function (m) { return m.getLatLng(); });
-            if (ll.length >= 2) {
-                teachPolyline = L.polyline(ll, { color: '#00E676', weight: 3, opacity: 0.95 }).addTo(teachGroup);
+            if (ll.length < 2) return;
+            if (teachIsPoly && ll.length >= 3) {
+                teachPolygon = L.polygon(ll, {
+                    color: '#00E676',
+                    weight: 3,
+                    fillColor: '#00E676',
+                    fillOpacity: 0.28
+                }).addTo(teachGroup);
+            } else {
+                teachPolyline = L.polyline(ll, {
+                    color: '#00E676',
+                    weight: 3,
+                    opacity: 0.95
+                }).addTo(teachGroup);
             }
         }
 
         function addTeachPoint(lat, lng) {
-            if (teachPolygon) {
-                teachGroup.removeLayer(teachPolygon);
-                teachPolygon = null;
-            }
             const m = L.circleMarker([lat, lng], {
                 radius: 6,
                 color: '#00B0FF',
@@ -92,22 +106,14 @@
                 fillOpacity: 0.9
             }).addTo(teachGroup);
             teachMarkers.push(m);
-            _rebuildTeachPolyline();
+            _rebuildTeachGeometry();
         }
 
         function undoTeachPoint() {
             if (teachMarkers.length === 0) return;
             const m = teachMarkers.pop();
             teachGroup.removeLayer(m);
-            if (teachPolyline) {
-                teachGroup.removeLayer(teachPolyline);
-                teachPolyline = null;
-            }
-            if (teachPolygon) {
-                teachGroup.removeLayer(teachPolygon);
-                teachPolygon = null;
-            }
-            _rebuildTeachPolyline();
+            _rebuildTeachGeometry();
         }
 
         function clearTeachLayer() {
@@ -124,22 +130,67 @@
         }
 
         function closePolygon() {
-            const ll = teachMarkers.map(function (m) { return m.getLatLng(); });
-            if (ll.length < 3) return;
-            if (teachPolyline) {
-                teachGroup.removeLayer(teachPolyline);
-                teachPolyline = null;
+            _rebuildTeachGeometry();
+        }
+
+        // ── RUN: loaded mission preview (distinct from teach-in) ─────────
+        var missionPreviewGroup = L.layerGroup().addTo(map);
+        var missionPreviewMarkers = [];
+        var missionPreviewPolyline = null;
+        var missionPreviewPolygon = null;
+        const MISSION_PREVIEW_COLOR = '#FF9800';
+
+        function clearMissionPreview() {
+            missionPreviewMarkers.forEach(function (m) {
+                missionPreviewGroup.removeLayer(m);
+            });
+            missionPreviewMarkers = [];
+            if (missionPreviewPolyline) {
+                missionPreviewGroup.removeLayer(missionPreviewPolyline);
+                missionPreviewPolyline = null;
             }
-            if (teachPolygon) {
-                teachGroup.removeLayer(teachPolygon);
-                teachPolygon = null;
+            if (missionPreviewPolygon) {
+                missionPreviewGroup.removeLayer(missionPreviewPolygon);
+                missionPreviewPolygon = null;
             }
-            teachPolygon = L.polygon(ll, {
-                color: '#00E676',
-                weight: 3,
-                fillColor: '#00E676',
-                fillOpacity: 0.28
-            }).addTo(teachGroup);
+        }
+
+        function setMissionPreview(type, coords) {
+            clearMissionPreview();
+            if (!coords || coords.length === 0) return;
+            const t = (type || 'PATH').toUpperCase();
+            coords.forEach(function (c) {
+                const lat = c[0], lng = c[1];
+                const m = L.circleMarker([lat, lng], {
+                    radius: 5,
+                    color: MISSION_PREVIEW_COLOR,
+                    weight: 2,
+                    fillColor: MISSION_PREVIEW_COLOR,
+                    fillOpacity: 0.85
+                }).addTo(missionPreviewGroup);
+                missionPreviewMarkers.push(m);
+            });
+            const ll = coords.map(function (c) { return L.latLng(c[0], c[1]); });
+            if (t === 'POLY' && ll.length >= 3) {
+                missionPreviewPolygon = L.polygon(ll, {
+                    color: MISSION_PREVIEW_COLOR,
+                    weight: 3,
+                    fillColor: MISSION_PREVIEW_COLOR,
+                    fillOpacity: 0.22
+                }).addTo(missionPreviewGroup);
+            } else if (ll.length >= 2) {
+                missionPreviewPolyline = L.polyline(ll, {
+                    color: MISSION_PREVIEW_COLOR,
+                    weight: 3,
+                    opacity: 0.95
+                }).addTo(missionPreviewGroup);
+            }
+            try {
+                const b = L.latLngBounds(ll);
+                if (b.isValid()) {
+                    map.fitBounds(b.pad(0.12));
+                }
+            } catch (e) { /* ignore */ }
         }
     </script>
 </body>
