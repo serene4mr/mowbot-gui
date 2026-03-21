@@ -1,6 +1,7 @@
 """Main window: map, overlays, and component wiring."""
 
 import sys
+from typing import Any, Dict, Optional
 
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 from PySide6.QtCore import Qt
@@ -15,8 +16,9 @@ _MODE_LABELS = ("MODE: SYSTEM SETUP", "MODE: TEACH-IN", "MODE: AUTO-RUN")
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__()
+        self.config = config or {}
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setWindowTitle("Mowbot Control GUMI")
         self.resize(1280, 800)
@@ -30,6 +32,15 @@ class MainWindow(QMainWindow):
         self.top_bar = TopBar(self)
         self.hud_panel = LeftHUD(self)
         self.sidebar_panel = RightSidebar(self)
+
+        serial = self.config.get("general", {}).get("serial_number")
+        if serial:
+            serial_text = str(serial).strip()
+            if serial_text.lower().startswith("mowbot"):
+                robot_id = serial_text
+            else:
+                robot_id = f"Mowbot-{serial_text}"
+            self.top_bar.set_robot_id(robot_id)
 
         self._connect_components()
 

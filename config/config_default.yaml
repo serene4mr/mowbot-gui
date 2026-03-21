@@ -1,0 +1,13 @@
+# General Application Settings
+general:
+  manufacturer: "MowbotTech"      # Default manufacturer for VDA5050 topics
+  serial_number: "default"    # Default serial if not specified
+
+# MQTT Broker Settings
+# Note: In production, these are often overridden by encrypted DB or Env Vars
+broker:
+  host: "localhost"           # MQTT broker hostname
+  port: 1883                  # MQTT broker port (8883 for HiveMQ TLS)
+  use_tls: false              # Set to true for HiveMQ Cloud
+  user: ""                    # MQTT username
+  password: ""                # MQTT password

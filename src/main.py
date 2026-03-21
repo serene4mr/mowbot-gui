@@ -27,8 +27,11 @@ os.environ.setdefault(
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer
 from ui.main_window import MainWindow
+from utils.config import load_config
 
 def main():
+    config = load_config()
+
     # Initialize the Qt Application
     app = QApplication(sys.argv)
     
@@ -36,7 +39,7 @@ def main():
     # app.setStyleSheet(open("assets/styles/dark_theme.qss").read())
 
     # Create and show the Main Window
-    window = MainWindow()
+    window = MainWindow(config=config)
     window.showFullScreen()
 
     def _graceful_shutdown(signum, _frame):
