@@ -2,13 +2,13 @@
 
 from PySide6.QtWidgets import QFrame, QVBoxLayout, QLabel
 
+from ui import theme
+
 
 class LeftHUD(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet(
-            "background-color: rgba(20, 25, 30, 210); border-radius: 10px; color: white;"
-        )
+        self.setStyleSheet(theme.PANEL_STYLE)
         self._setup_ui()
 
     def _setup_ui(self):
@@ -17,9 +17,13 @@ class LeftHUD(QFrame):
         layout.setSpacing(10)
 
         title = QLabel("TELEMETRY")
-        title.setStyleSheet("color: #00E676; font-weight: bold; font-size: 15px;")
+        title.setStyleSheet(
+            f"color: {theme.ACCENT_GREEN}; font-weight: bold; "
+            f"font-size: {theme.FONT_MD}px;"
+        )
         layout.addWidget(title)
 
+        mono_style = f"font-size: {theme.FONT_XS}px; font-family: monospace;"
         self.lbl_lat = QLabel("LAT: ---")
         self.lbl_lon = QLabel("LON: ---")
         self.lbl_theta = QLabel("THETA: ---")
@@ -27,14 +31,15 @@ class LeftHUD(QFrame):
 
         for lbl in (self.lbl_lat, self.lbl_lon, self.lbl_theta, self.lbl_vel):
             lbl.setWordWrap(False)
-            lbl.setStyleSheet("font-size: 13px; font-family: monospace;")
+            lbl.setStyleSheet(mono_style)
             layout.addWidget(lbl)
 
         layout.addStretch()
 
-    def update_telemetry(self, x: float, y: float, theta: float, velocity: float) -> None:
+    def update_telemetry(
+        self, x: float, y: float, theta: float, velocity: float
+    ) -> None:
         """Update position and velocity from the main thread."""
-        # VDA mapping in this app: x = longitude, y = latitude.
         self.lbl_lat.setText(f"LAT: {y}")
         self.lbl_lon.setText(f"LON: {x}")
         self.lbl_theta.setText(f"THETA: {theta:.2f} deg")

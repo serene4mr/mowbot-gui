@@ -1,31 +1,33 @@
-# src/core/vda_bridge.py
+"""QThread running an asyncio VDA 5050 MasterControlClient.
+
+Emits Qt signals for every piece of AGV telemetry so the GUI can
+react without touching the MQTT layer directly.
+"""
+
 import asyncio
 import math
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from PySide6.QtCore import QThread, Signal
 
-# Import directly from your custom VDA 5050 package
 from vda5050.clients.master_control import MasterControlClient
 from vda5050.models.state import State
 from vda5050.models.base import Action, BlockingType
 from vda5050.models.instant_action import InstantActions
 from utils.logger import logger
 
+
 class VDA5050BridgeThread(QThread):
-    # ==========================================
-    # SIGNALS: Safely transmit data to the GUI
-    # ==========================================
     connection_status = Signal(bool)
     battery_updated = Signal(float)
-    # x, y, theta_deg (for HUD), speed_m/s (planar from velocity vx/vy)
-    position_updated = Signal(float, float, float, float)
-    mode_updated = Signal(str)                     # e.g., 'AUTOMATIC', 'MANUAL'
-    driving_status = Signal(bool)                  # True if moving, False if stopped
-    safety_updated = Signal(str)                   # e.g., 'NONE', 'AUTOACK', 'MANUAL'
-    sensor_diag_updated = Signal(str)              # e.g., "IMU:OK,Laser:OK,GNSS:OK"
-    error_updated = Signal(str)                    # Contains the most severe error description
+    position_updated = Signal(float, float, float, float)  # x, y, theta_deg, speed
+    mode_updated = Signal(str)
+    driving_status = Signal(bool)
+    safety_updated = Signal(str)
+    sensor_diag_updated = Signal(str)
+    error_updated = Signal(str)
 
     def __init__(
         self,
@@ -39,34 +41,63 @@ class VDA5050BridgeThread(QThread):
         self.port = port
         self.serial_number = serial_number
         self.manufacturer = manufacturer
-        
-        self.client = None
+
+        self.client: Optional[MasterControlClient] = None
         self._is_running = True
-        self._loop = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._logged_first_state = False
 
-    def run(self):
-        """Executed automatically by QThread. Runs in a background thread."""
+    # ── Thread entry / exit ───────────────────────────────────
+
+    def run(self) -> None:
+        """Executed in the background thread by QThread.start()."""
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
-        
-        # Start the async MQTT logic
-        self._loop.run_until_complete(self._async_main())
-        
-        # Cleanup when thread stops
-        self._loop.close()
+        try:
+            self._loop.run_until_complete(self._async_main())
+        except Exception as exc:
+            if self._is_running:
+                logger.error(f"[VDA] Event loop error: {exc}")
+        finally:
+            self._cleanup_loop()
 
-    async def _async_main(self):
-        """Asynchronous entry point for the VDA5050 MasterControlClient."""
+    def _cleanup_loop(self) -> None:
+        """Cancel remaining async tasks and close the loop cleanly."""
+        if self._loop is None:
+            return
+        try:
+            pending = asyncio.all_tasks(self._loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                self._loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
+        except RuntimeError:
+            pass
+        finally:
+            self._loop.close()
+            self._loop = None
+
+    def stop(self) -> None:
+        """Gracefully shut down from the main thread."""
+        self._is_running = False
+        if self._loop is not None and self._loop.is_running():
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        if not self.wait(5000):
+            logger.warning("[VDA] Bridge thread did not stop in time; terminating")
+            self.terminate()
+
+    # ── Async core ────────────────────────────────────────────
+
+    async def _async_main(self) -> None:
         self.client = MasterControlClient(
             broker_url=self.host,
             manufacturer=self.manufacturer,
             serial_number=f"gui-master-{self.serial_number}",
             broker_port=self.port,
-            validate_messages=False
+            validate_messages=False,
         )
-
-        # Register the callback for incoming state messages
         self.client.on_state_update(self._on_state_received)
 
         try:
@@ -74,26 +105,22 @@ class VDA5050BridgeThread(QThread):
             success = await self.client.connect()
             self.connection_status.emit(success)
 
-            # Keep the async loop alive
             while self._is_running:
                 await asyncio.sleep(0.5)
-
-        except Exception as e:
-            logger.error(f"Connection error: {e}")
+        except Exception as exc:
+            logger.error(f"Connection error: {exc}")
             self.connection_status.emit(False)
         finally:
             if self.client and self.client.is_connected():
                 await self.client.disconnect()
 
+    # ── State callback ────────────────────────────────────────
+
     @staticmethod
     def _norm_serial(s: str) -> str:
         return (s or "").strip().lower()
 
-    def _on_state_received(self, serial: str, state: State):
-        """
-        Callback triggered by the vda5050_client. 
-        'state' is the validated Pydantic model containing all AGV telemetry.
-        """
+    def _on_state_received(self, serial: str, state: State) -> None:
         if self._norm_serial(serial) != self._norm_serial(self.serial_number):
             return
 
@@ -102,38 +129,31 @@ class VDA5050BridgeThread(QThread):
             logger.info(
                 "[VDA Bridge] First state received: "
                 f"agvPosition={'yes' if ap else 'no'}, "
-                f"positionInitialized={getattr(ap, 'positionInitialized', None) if ap else 'n/a'}"
+                f"positionInitialized="
+                f"{getattr(ap, 'positionInitialized', None) if ap else 'n/a'}"
             )
             self._logged_first_state = True
 
-        # 1. Battery State
         if state.batteryState:
             self.battery_updated.emit(state.batteryState.batteryCharge)
 
-        # 2. Position + speed for HUD
         ap = state.agvPosition
         if ap is not None and ap.positionInitialized:
-            theta_rad = ap.theta
-            theta_deg = math.degrees(theta_rad) if theta_rad is not None else 0.0
+            theta_deg = math.degrees(ap.theta) if ap.theta is not None else 0.0
             vx = vy = 0.0
             if state.velocity is not None:
                 vx = state.velocity.vx or 0.0
                 vy = state.velocity.vy or 0.0
-            speed = math.hypot(vx, vy)
-            self.position_updated.emit(ap.x, ap.y, theta_deg, speed)
+            self.position_updated.emit(ap.x, ap.y, theta_deg, math.hypot(vx, vy))
 
-        # 3. Operating Mode
         if state.operatingMode:
             self.mode_updated.emit(state.operatingMode.value)
 
-        # 4. Driving Status
         self.driving_status.emit(state.driving)
 
-        # 5. Safety & E-Stop Status
         if state.safetyState:
             self.safety_updated.emit(state.safetyState.eStop.value)
 
-        # 6. Sensor diagnostics (custom info payload from AGV)
         if state.information:
             for info in state.information:
                 if (
@@ -143,55 +163,41 @@ class VDA5050BridgeThread(QThread):
                     self.sensor_diag_updated.emit(info.infoDescription)
                     break
 
-        # 7. Error Handling
         if state.errors:
-            # Prioritize FATAL errors for the GUI warning banner
-            fatal_errors = [e for e in state.errors if e.errorLevel.value == 'FATAL']
-            if fatal_errors:
-                self.error_updated.emit(f"FATAL: {fatal_errors[0].errorDescription}")
+            fatal = [e for e in state.errors if e.errorLevel.value == "FATAL"]
+            if fatal:
+                self.error_updated.emit(f"FATAL: {fatal[0].errorDescription}")
             else:
-                self.error_updated.emit(f"WARNING: {state.errors[0].errorDescription}")
+                self.error_updated.emit(
+                    f"WARNING: {state.errors[0].errorDescription}"
+                )
         else:
             self.error_updated.emit("ALL CLEAR")
 
-    def stop(self):
-        """Gracefully shuts down the background thread."""
-        self._is_running = False
-        self.wait()
+    # ── Commands (GUI → MQTT) ─────────────────────────────────
 
-    # ==========================================
-    # COMMANDS (GUI -> MQTT Broker)
-    # ==========================================
-    def trigger_estop(self):
-        """Called from the Main UI Thread to dispatch an action asynchronously."""
+    def trigger_estop(self) -> None:
         if self._loop and self.client:
-            asyncio.run_coroutine_threadsafe(self._send_estop_async(), self._loop)
+            asyncio.run_coroutine_threadsafe(self._send_estop(), self._loop)
 
-    async def _send_estop_async(self):
-        """Constructs and sends the VDA5050 InstantAction for E-STOP."""
+    async def _send_estop(self) -> None:
         logger.warning("Initiating Emergency Stop sequence")
-        
-        # 'stop' is a standardized actionType in VDA 5050
         action = Action(
-            actionType="stop", 
+            actionType="stop",
             actionId=str(uuid.uuid4()),
             blockingType=BlockingType.HARD,
-            actionParameters=[]
+            actionParameters=[],
         )
-        
-        # Construct the payload
-        instant_actions_msg = InstantActions(
-            headerId=int(datetime.now().timestamp()), # Ensure uniqueness
+        msg = InstantActions(
+            headerId=int(datetime.now().timestamp()),
             timestamp=datetime.now(timezone.utc),
             version="2.1.0",
             manufacturer=self.manufacturer,
             serialNumber=self.serial_number,
-            actions=[action]
+            actions=[action],
         )
-        
-        # Publish via the custom package
         await self.client.send_instant_action(
             target_manufacturer=self.manufacturer,
             target_serial=self.serial_number,
-            action=instant_actions_msg
+            action=msg,
         )

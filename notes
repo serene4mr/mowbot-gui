@@ -9,3 +9,4 @@ Nothing was accepting connections on the LAN IP, so remote clients got refused.
 Fix: add listener 1883 0.0.0.0 (or the specific LAN IP) so the broker listens on all interfaces.
 
 
+MOWBOT_MQTT_HOST=192.168.1.10 python src/main.py

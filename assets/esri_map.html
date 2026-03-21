@@ -5,15 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mowbot MapLibre Map</title>
 
-    <!-- Load MapLibre GL JS & CSS -->
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 
     <style>
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; background-color: #121212; }
         #map { height: 100%; width: 100%; }
-
-        /* Optional: Hide the MapLibre watermark to keep the UI purely industrial */
         .maplibregl-ctrl-bottom-right { display: none !important; }
     </style>
 </head>
@@ -21,8 +18,13 @@
     <div id="map"></div>
 
     <script>
-        // Your exact style specification
-        const SATELLITE_STYLE = {
+        var TRACK_ZOOM = 19;
+        var HEADING_OFFSET_DEG = 180;
+        var MOWBOT_ARROW_SVG =
+            '<svg width="30" height="30" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
+            '<path d="M50 5 L90 90 L50 70 L10 90 L50 5 Z" fill="#00ff88" stroke="#ffffff" stroke-width="2"/></svg>';
+
+        var SATELLITE_STYLE = {
             version: 8,
             glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
             sources: {
@@ -36,27 +38,49 @@
                 }
             },
             layers: [
-                {
-                    id: 'esri-satellite-layer',
-                    type: 'raster',
-                    source: 'esri-satellite'
-                }
+                { id: 'esri-satellite-layer', type: 'raster', source: 'esri-satellite' }
             ]
         };
 
-        // Initialize the map
-        const map = new maplibregl.Map({
-            container: 'map', // ID of the div
+        var map = new maplibregl.Map({
+            container: 'map',
             style: SATELLITE_STYLE,
-            center: [128.34, 36.11], // Centered on Gumi, South Korea
-            zoom: 17, // High zoom for mowing operations
-            interactive: false // Optional: Set to false if you want to lock the map so the operator can't pan around, forcing it to follow the robot
+            center: [128.34, 36.11],
+            zoom: 17,
+            interactive: true
         });
 
-        // Once the map loads, we can easily add the robot marker later
-        map.on('load', () => {
+        map.on('load', function () {
             console.log("MapLibre loaded ESRI Satellite tiles successfully!");
         });
+
+        var robotMarker = null;
+
+        function updateRobotPosition(lat, lng, headingDeg) {
+            var markerHeading = (headingDeg || 0) + HEADING_OFFSET_DEG;
+
+            if (!robotMarker) {
+                var el = document.createElement('div');
+                el.id = 'mowbot-arrow';
+                el.style.width = '30px';
+                el.style.height = '30px';
+                el.innerHTML = MOWBOT_ARROW_SVG;
+                el.style.transform = 'rotate(' + markerHeading + 'deg)';
+                el.style.transformOrigin = '50% 50%';
+
+                robotMarker = new maplibregl.Marker({ element: el })
+                    .setLngLat([lng, lat])
+                    .addTo(map);
+            } else {
+                robotMarker.setLngLat([lng, lat]);
+                var arrow = document.getElementById('mowbot-arrow');
+                if (arrow) {
+                    arrow.style.transform = 'rotate(' + markerHeading + 'deg)';
+                }
+            }
+
+            map.flyTo({ center: [lng, lat], zoom: TRACK_ZOOM, animate: false });
+        }
     </script>
 </body>
 </html>

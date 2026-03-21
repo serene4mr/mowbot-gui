@@ -1,19 +1,28 @@
-"""Main window: map, overlays, and component wiring."""
+"""Main window: map background with floating HUD overlays.
 
-import sys
+Responsibilities:
+  1. Instantiate components and place them on screen.
+  2. Wire AppState signals → component update methods.
+  3. Handle sidebar user-actions (e-stop, save, tab switch).
+
+All MQTT/VDA lifecycle lives in VDAController.
+All state formatting lives in AppState.
+"""
+
 from typing import Any, Dict, Optional
 
-from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
+from PySide6.QtWidgets import QMainWindow, QMessageBox
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent
 
-from core.vda_bridge import VDA5050BridgeThread
+from core.app_state import AppState
+from core.vda_controller import VDAController
 from ui.components.map_view import MapView
 from ui.components.top_bar import TopBar
 from ui.components.left_hud import LeftHUD
 from ui.components.right_sidebar import RightSidebar
+from ui import theme
 from utils.logger import logger
-
 
 _MODE_LABELS = ("MODE: SYSTEM SETUP", "MODE: TEACH-IN", "MODE: AUTO-RUN")
 
@@ -25,132 +34,71 @@ class MainWindow(QMainWindow):
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setWindowTitle("Mowbot Control GUMI")
         self.resize(1280, 800)
-        self.setStyleSheet("QMainWindow { background-color: #121212; }")
+        self.setStyleSheet(theme.MAIN_WINDOW_STYLE)
 
-        # Layer 1: background map (WebEngine / ESRI lives in MapView)
+        self._app_state = AppState(self)
+
+        # Layer 1: full-screen map background
         self.map_view = MapView(self)
         self.setCentralWidget(self.map_view)
 
-        # Layer 2–4: floating components
+        # Layer 2–4: floating overlays
         self.top_bar = TopBar(self)
         self.hud_panel = LeftHUD(self)
         self.sidebar_panel = RightSidebar(self)
 
-        self._last_battery_pct: Optional[float] = None
-        self._sensor_diag: str = "--"
-        self._mqtt_ok = False
-        self._vda_bridge: Optional[VDA5050BridgeThread] = None
-        self._last_vda_status: Optional[str] = None
-        self._last_operating_mode: Optional[str] = None
+        self._connect_state()
+        self._connect_sidebar()
+        self._init_robot_id()
 
-        serial = self.config.get("general", {}).get("serial_number")
-        if serial:
-            serial_text = str(serial).strip()
-            if serial_text.lower().startswith("mowbot"):
-                robot_id = serial_text
-            else:
-                robot_id = f"Mowbot-{serial_text}"
-            self.top_bar.set_robot_id(robot_id)
+        # VDA controller owns bridge lifecycle and writes into AppState
+        self._vda = VDAController(self.config, self._app_state, parent=self)
 
-        self._connect_components()
-        self._start_vda_bridge()
+    # ── State → UI wiring ─────────────────────────────────────
 
-    def _start_vda_bridge(self) -> None:
-        g = self.config.get("general", {})
-        b = self.config.get("broker", {})
-        host = str(b.get("host", "localhost"))
-        port = int(b.get("port", 1883))
-        serial = str(g.get("serial_number", "default"))
-        manufacturer = str(g.get("manufacturer", "MowbotTech"))
+    def _connect_state(self) -> None:
+        s = self._app_state
+        s.status_line_changed.connect(self.top_bar.set_status_line)
+        s.mode_changed.connect(lambda m: self.top_bar.set_mode(f"MODE: {m}"))
+        s.position_changed.connect(self.hud_panel.update_telemetry)
+        s.position_changed.connect(self._update_map_marker)
+        s.robot_id_changed.connect(self.top_bar.set_robot_id)
+        s.error_changed.connect(self._on_error)
 
-        self._vda_bridge = VDA5050BridgeThread(
-            host=host,
-            port=port,
-            serial_number=serial,
-            manufacturer=manufacturer,
-        )
-        self._vda_bridge.connection_status.connect(self._on_mqtt_connection)
-        self._vda_bridge.battery_updated.connect(self._on_battery)
-        self._vda_bridge.position_updated.connect(self._on_vda_position)
-        self._vda_bridge.mode_updated.connect(self._on_operating_mode)
-        self._vda_bridge.sensor_diag_updated.connect(self._on_sensor_diag)
-        self._vda_bridge.error_updated.connect(self._on_vda_status)
-        self._vda_bridge.start()
-        logger.info(
-            f"[VDA] Bridge thread started (broker {host}:{port}, "
-            f"robot serial={serial}, manufacturer={manufacturer})"
-        )
-
-    def _on_mqtt_connection(self, connected: bool) -> None:
-        self._mqtt_ok = connected
-        logger.info(f"[MQTT] {'connected' if connected else 'disconnected'}")
-        self._refresh_status_line()
-
-    def _on_battery(self, pct: float) -> None:
-        self._last_battery_pct = pct
-        self._refresh_status_line()
-
-    def _refresh_status_line(self) -> None:
-        bat = self._last_battery_pct
-        bat_s = f"{bat:.0f}%" if bat is not None else "--"
-        mqtt_s = "OK" if self._mqtt_ok else "OFF"
-        self.top_bar.set_status_line(
-            f"{self._sensor_diag} | BAT: {bat_s} | MQTT: {mqtt_s}"
-        )
-
-    def _on_sensor_diag(self, sensor_diag: str) -> None:
-        self._sensor_diag = self._format_sensor_diag(sensor_diag)
-        self._refresh_status_line()
-
-    @staticmethod
-    def _format_sensor_diag(sensor_diag: str) -> str:
-        parts = []
-        for chunk in str(sensor_diag).split(","):
-            item = chunk.strip()
-            if not item:
-                continue
-            if ":" in item:
-                key, value = item.split(":", 1)
-                parts.append(f"{key.strip().upper()}: {value.strip().upper()}")
-            else:
-                parts.append(item.upper())
-        return " | ".join(parts) if parts else "--"
-
-    def _on_vda_position(
-        self, x: float, y: float, theta_deg: float, speed_mps: float
+    def _update_map_marker(
+        self, x: float, y: float, theta_deg: float, _speed: float
     ) -> None:
-        self.hud_panel.update_telemetry(x, y, theta_deg, speed_mps)
-        # VDA position uses x=lon, y=lat; Leaflet expects [lat, lon].
         self.map_view.update_robot_marker(lat=y, lon=x, heading_deg=theta_deg)
 
-    def _on_operating_mode(self, mode: str) -> None:
-        self._last_operating_mode = mode
-        self.top_bar.set_mode(f"MODE: {mode}")
-
-    def _on_vda_status(self, msg: str) -> None:
-        # Avoid spamming unchanged status lines every state tick.
-        if msg == self._last_vda_status:
-            return
-        self._last_vda_status = msg
+    def _on_error(self, msg: str) -> None:
         logger.info(f"[VDA] {msg}")
 
-    def _connect_components(self):
-        self.sidebar_panel.tab_changed.connect(self._on_tab_changed)
-        self.sidebar_panel.save_mission_requested.connect(self._on_save_mission)
-        self.sidebar_panel.estop_pressed.connect(self._on_estop)
-        self.sidebar_panel.start_system_state_changed.connect(
-            self._on_start_system_state_changed
-        )
-        self.sidebar_panel.log_point_requested.connect(self._on_log_point)
-        self.sidebar_panel.auto_record_clicked.connect(self._on_auto_record)
-        self.sidebar_panel.execute_mission_requested.connect(self._on_execute_mission)
+    # ── Robot identity ────────────────────────────────────────
 
-    def _on_tab_changed(self, index: int):
-        # Use tab text only before we receive live operating mode from VDA state.
-        if self._last_operating_mode is None:
+    def _init_robot_id(self) -> None:
+        serial = self.config.get("general", {}).get("serial_number")
+        if serial:
+            text = str(serial).strip()
+            robot_id = text if text.lower().startswith("mowbot") else f"Mowbot-{text}"
+            self._app_state.set_robot_id(robot_id)
+
+    # ── Sidebar interaction handlers ──────────────────────────
+
+    def _connect_sidebar(self) -> None:
+        sb = self.sidebar_panel
+        sb.tab_changed.connect(self._on_tab_changed)
+        sb.save_mission_requested.connect(self._on_save_mission)
+        sb.estop_pressed.connect(self._on_estop)
+        sb.start_system_state_changed.connect(self._on_start_system)
+        sb.log_point_requested.connect(self._on_log_point)
+        sb.auto_record_clicked.connect(self._on_auto_record)
+        sb.execute_mission_requested.connect(self._on_execute_mission)
+
+    def _on_tab_changed(self, index: int) -> None:
+        if self._app_state.operating_mode is None:
             self.top_bar.set_mode(_MODE_LABELS[index])
 
-    def _on_save_mission(self):
+    def _on_save_mission(self) -> None:
         QMessageBox.information(
             self,
             "Save Mission",
@@ -158,53 +106,40 @@ class MainWindow(QMainWindow):
         )
         self.sidebar_panel.switch_tab(2)
 
-    def _on_estop(self):
+    def _on_estop(self) -> None:
         logger.critical("E-STOP pressed from UI")
-        if self._vda_bridge is not None:
-            self._vda_bridge.trigger_estop()
+        self._vda.trigger_estop()
 
-    def _on_start_system_state_changed(self, is_running: bool):
-        # Hook for MQTT / robot power commands
+    def _on_start_system(self, is_running: bool) -> None:
         logger.info(f"System running state: {is_running}")
 
-    def _on_log_point(self):
+    def _on_log_point(self) -> None:
         logger.info("LOG POINT (teach-in)")
 
-    def _on_auto_record(self):
+    def _on_auto_record(self) -> None:
         logger.info("AUTO-RECORD clicked")
 
-    def _on_execute_mission(self):
+    def _on_execute_mission(self) -> None:
         logger.info("EXECUTE MISSION")
 
+    # ── Lifecycle ─────────────────────────────────────────────
+
     def closeEvent(self, event: QCloseEvent) -> None:
-        if self._vda_bridge is not None:
-            self._vda_bridge.stop()
-            self._vda_bridge = None
+        self._vda.stop()
         super().closeEvent(event)
 
-    def resizeEvent(self, event):
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         w, h = self.width(), self.height()
+        m = theme.OVERLAY_MARGIN
 
-        top_bar_height = 50
-        self.top_bar.setGeometry(0, 0, w, top_bar_height)
-
-        margin = 20
-        hud_width = 320
-        hud_height = 210
-        self.hud_panel.setGeometry(margin, top_bar_height + margin, hud_width, hud_height)
-
-        sidebar_width = 350
-        self.sidebar_panel.setGeometry(
-            w - sidebar_width - margin,
-            top_bar_height + margin,
-            sidebar_width,
-            h - top_bar_height - (margin * 2),
+        self.top_bar.setGeometry(0, 0, w, theme.TOPBAR_HEIGHT)
+        self.hud_panel.setGeometry(
+            m, theme.TOPBAR_HEIGHT + m, theme.HUD_WIDTH, theme.HUD_HEIGHT
         )
-
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.showFullScreen()
-    sys.exit(app.exec())
+        self.sidebar_panel.setGeometry(
+            w - theme.SIDEBAR_WIDTH - m,
+            theme.TOPBAR_HEIGHT + m,
+            theme.SIDEBAR_WIDTH,
+            h - theme.TOPBAR_HEIGHT - (m * 2),
+        )
