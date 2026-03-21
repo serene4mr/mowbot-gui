@@ -16,11 +16,13 @@ from vda5050.clients.master_control import MasterControlClient
 from vda5050.models.state import State
 from vda5050.models.base import Action, BlockingType
 from vda5050.models.instant_action import InstantActions
+from vda5050.models.order import Order
 from utils.logger import logger
 
 
 class VDA5050BridgeThread(QThread):
     connection_status = Signal(bool)
+    order_sent = Signal(bool, str)  # success, order_id or error detail
     battery_updated = Signal(float)
     position_updated = Signal(float, float, float, float)  # x, y, theta_deg, speed
     mode_updated = Signal(str)
@@ -179,6 +181,29 @@ class VDA5050BridgeThread(QThread):
     def trigger_estop(self) -> None:
         if self._loop and self.client:
             asyncio.run_coroutine_threadsafe(self._send_estop(), self._loop)
+
+    def send_order(self, order: Order) -> None:
+        if self._loop and self.client:
+            asyncio.run_coroutine_threadsafe(self._publish_order(order), self._loop)
+        else:
+            self.order_sent.emit(False, "MQTT client not ready")
+
+    async def _publish_order(self, order: Order) -> None:
+        try:
+            ok = await self.client.send_order(
+                target_manufacturer=self.manufacturer,
+                target_serial=self.serial_number,
+                order=order,
+            )
+            if ok:
+                logger.info(f"[VDA Bridge] Order published: {order.orderId}")
+                self.order_sent.emit(True, order.orderId)
+            else:
+                logger.error("[VDA Bridge] send_order returned False")
+                self.order_sent.emit(False, "send_order returned False")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[VDA Bridge] send_order failed")
+            self.order_sent.emit(False, str(exc))
 
     async def _send_estop(self) -> None:
         logger.warning("Initiating Emergency Stop sequence")

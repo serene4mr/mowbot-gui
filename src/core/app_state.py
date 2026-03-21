@@ -43,6 +43,9 @@ class AppState(QObject):
     tch_error = Signal(str)
     tch_session_saved = Signal(str)  # filename only (path_* / poly_* + datetime + .json)
 
+    # VDA order publish result (PATH execute, etc.)
+    order_dispatched = Signal(bool, str)  # success, order_id or error detail
+
     def __init__(
         self,
         parent: Optional[QObject] = None,

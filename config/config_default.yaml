@@ -3,6 +3,7 @@
 general:
   manufacturer: "MowbotTech"      # Default manufacturer for VDA5050 topics
   serial_number: "mowbot_001"  # Robot AGV serial (must match VDA 5050 state topic / payload)
+  map_id: "mowbot_field"           # VDA5050 NodePosition.mapId for PATH orders (match AGV map)
 
 # MQTT Broker Settings
 # Note: In production, these are often overridden by encrypted DB or Env Vars

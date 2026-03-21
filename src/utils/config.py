@@ -45,6 +45,7 @@ def load_config() -> Dict[str, Any]:
         "general": {
             "manufacturer": os.getenv("MOWBOT_MANUFACTURER"),
             "serial_number": os.getenv("MOWBOT_SERIAL_NUMBER"),
+            "map_id": os.getenv("MOWBOT_MAP_ID"),
         },
         "broker": {
             "host": os.getenv("MOWBOT_MQTT_HOST"),

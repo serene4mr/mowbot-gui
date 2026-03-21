@@ -21,6 +21,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent
 
 from core.app_state import AppState
+from core.mission_builder import build_path_order
 from core.vda_controller import VDAController
 from ui.components.map_view import MapView
 from ui.components.top_bar import TopBar
@@ -182,6 +183,7 @@ class MainWindow(QMainWindow):
         s.tch_auto_record_changed.connect(self._on_tch_auto_record_state)
         s.tch_error.connect(self._on_tch_error)
         s.tch_session_saved.connect(self._on_tch_session_saved)
+        s.order_dispatched.connect(self._on_order_dispatched)
 
     def _update_map_marker(
         self, x: float, y: float, theta_deg: float, _speed: float
@@ -318,7 +320,72 @@ class MainWindow(QMainWindow):
         self._app_state.tch_clear_session()
 
     def _on_execute_mission(self) -> None:
-        logger.info("EXECUTE MISSION")
+        name = self.sidebar_panel.current_mission_filename()
+        if not name:
+            QMessageBox.information(self, "Execute mission", "No mission selected.")
+            return
+        if not self._app_state.mqtt_ok:
+            QMessageBox.warning(
+                self,
+                "Execute mission",
+                "MQTT is not connected. Wait for connection before running a mission.",
+            )
+            return
+        path = self._safe_mission_path(name)
+        if path is None or not os.path.isfile(path):
+            QMessageBox.warning(
+                self,
+                "Execute mission",
+                "Invalid mission name or file not found.",
+            )
+            return
+        typ, coords, err = self._parse_mission_json_file(path)
+        if err:
+            QMessageBox.warning(self, "Execute mission", err)
+            return
+        assert typ is not None
+        if typ != "PATH":
+            QMessageBox.information(
+                self,
+                "Execute mission",
+                "POLY missions cannot be executed yet. Save or convert to a PATH mission, "
+                "or use Load on map for preview only.",
+            )
+            return
+        g = self.config.get("general") or {}
+        manufacturer = str(g.get("manufacturer", "MowbotTech"))
+        serial_number = str(g.get("serial_number", "mowbot_001"))
+        map_id = str(g.get("map_id") or "mowbot_field")
+        try:
+            order = build_path_order(
+                coords,
+                manufacturer=manufacturer,
+                serial_number=serial_number,
+                map_id=map_id,
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "Execute mission", str(exc))
+            return
+
+        self.map_view.load_mission_preview(typ, coords)
+        self._mission_preview_filename = name
+
+        self._vda.send_path_order(order)
+        logger.info(
+            f"Execute mission: queued VDA order {order.orderId} from {name} "
+            f"({len(coords)} waypoints, mapId={map_id})"
+        )
+
+    def _on_order_dispatched(self, ok: bool, detail: str) -> None:
+        if ok:
+            logger.info(f"Order dispatched: {detail}")
+        else:
+            logger.error(f"Order dispatch failed: {detail}")
+            QMessageBox.warning(
+                self,
+                "Execute mission",
+                f"Failed to send order to the robot.\n\n{detail}",
+            )
 
     def _on_load_mission_preview(self) -> None:
         name = self.sidebar_panel.current_mission_filename()

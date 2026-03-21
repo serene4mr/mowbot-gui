@@ -7,6 +7,8 @@ from typing import Any, Dict, Optional
 
 from PySide6.QtCore import QObject
 
+from vda5050.models.order import Order
+
 from core.app_state import AppState
 from core.vda_bridge import VDA5050BridgeThread
 from utils.logger import logger
@@ -50,12 +52,16 @@ class VDAController(QObject):
         self._bridge.mode_updated.connect(self._state.set_mode)
         self._bridge.sensor_diag_updated.connect(self._state.set_sensor_diag)
         self._bridge.error_updated.connect(self._state.set_error)
+        self._bridge.order_sent.connect(self._forward_order_result)
         self._bridge.start()
 
         logger.info(
             f"[VDA] Bridge started → {host}:{port} "
             f"(serial={serial}, manufacturer={manufacturer})"
         )
+
+    def _forward_order_result(self, ok: bool, detail: str) -> None:
+        self._state.order_dispatched.emit(ok, detail)
 
     def stop(self) -> None:
         if self._bridge is not None:
@@ -67,3 +73,7 @@ class VDAController(QObject):
     def trigger_estop(self) -> None:
         if self._bridge is not None:
             self._bridge.trigger_estop()
+
+    def send_path_order(self, order: Order) -> None:
+        if self._bridge is not None:
+            self._bridge.send_order(order)
