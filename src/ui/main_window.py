@@ -160,8 +160,8 @@ class MainWindow(QMainWindow):
         self.top_bar.setGeometry(0, 0, w, top_bar_height)
 
         margin = 20
-        hud_width = 250
-        hud_height = 150
+        hud_width = 320
+        hud_height = 210
         self.hud_panel.setGeometry(margin, top_bar_height + margin, hud_width, hud_height)
 
         sidebar_width = 350
