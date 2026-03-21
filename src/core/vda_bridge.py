@@ -24,6 +24,7 @@ class VDA5050BridgeThread(QThread):
     mode_updated = Signal(str)                     # e.g., 'AUTOMATIC', 'MANUAL'
     driving_status = Signal(bool)                  # True if moving, False if stopped
     safety_updated = Signal(str)                   # e.g., 'NONE', 'AUTOACK', 'MANUAL'
+    sensor_diag_updated = Signal(str)              # e.g., "IMU:OK,Laser:OK,GNSS:OK"
     error_updated = Signal(str)                    # Contains the most severe error description
 
     def __init__(
@@ -132,7 +133,17 @@ class VDA5050BridgeThread(QThread):
         if state.safetyState:
             self.safety_updated.emit(state.safetyState.eStop.value)
 
-        # 6. Error Handling
+        # 6. Sensor diagnostics (custom info payload from AGV)
+        if state.information:
+            for info in state.information:
+                if (
+                    getattr(info, "infoType", "") == "SENSOR_DIAG"
+                    and getattr(info, "infoDescription", None)
+                ):
+                    self.sensor_diag_updated.emit(info.infoDescription)
+                    break
+
+        # 7. Error Handling
         if state.errors:
             # Prioritize FATAL errors for the GUI warning banner
             fatal_errors = [e for e in state.errors if e.errorLevel.value == 'FATAL']

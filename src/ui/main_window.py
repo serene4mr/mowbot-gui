@@ -37,9 +37,11 @@ class MainWindow(QMainWindow):
         self.sidebar_panel = RightSidebar(self)
 
         self._last_battery_pct: Optional[float] = None
+        self._sensor_diag: str = "--"
         self._mqtt_ok = False
         self._vda_bridge: Optional[VDA5050BridgeThread] = None
         self._last_vda_status: Optional[str] = None
+        self._last_operating_mode: Optional[str] = None
 
         serial = self.config.get("general", {}).get("serial_number")
         if serial:
@@ -70,6 +72,8 @@ class MainWindow(QMainWindow):
         self._vda_bridge.connection_status.connect(self._on_mqtt_connection)
         self._vda_bridge.battery_updated.connect(self._on_battery)
         self._vda_bridge.position_updated.connect(self._on_vda_position)
+        self._vda_bridge.mode_updated.connect(self._on_operating_mode)
+        self._vda_bridge.sensor_diag_updated.connect(self._on_sensor_diag)
         self._vda_bridge.error_updated.connect(self._on_vda_status)
         self._vda_bridge.start()
         logger.info(
@@ -90,7 +94,27 @@ class MainWindow(QMainWindow):
         bat = self._last_battery_pct
         bat_s = f"{bat:.0f}%" if bat is not None else "--"
         mqtt_s = "OK" if self._mqtt_ok else "OFF"
-        self.top_bar.set_status_line(f"GPS: -- | BAT: {bat_s} | MQTT: {mqtt_s}")
+        self.top_bar.set_status_line(
+            f"{self._sensor_diag} | BAT: {bat_s} | MQTT: {mqtt_s}"
+        )
+
+    def _on_sensor_diag(self, sensor_diag: str) -> None:
+        self._sensor_diag = self._format_sensor_diag(sensor_diag)
+        self._refresh_status_line()
+
+    @staticmethod
+    def _format_sensor_diag(sensor_diag: str) -> str:
+        parts = []
+        for chunk in str(sensor_diag).split(","):
+            item = chunk.strip()
+            if not item:
+                continue
+            if ":" in item:
+                key, value = item.split(":", 1)
+                parts.append(f"{key.strip().upper()}: {value.strip().upper()}")
+            else:
+                parts.append(item.upper())
+        return " | ".join(parts) if parts else "--"
 
     def _on_vda_position(
         self, x: float, y: float, theta_deg: float, speed_mps: float
@@ -98,6 +122,10 @@ class MainWindow(QMainWindow):
         self.hud_panel.update_telemetry(x, y, theta_deg, speed_mps)
         # VDA position uses x=lon, y=lat; Leaflet expects [lat, lon].
         self.map_view.update_robot_marker(lat=y, lon=x, heading_deg=theta_deg)
+
+    def _on_operating_mode(self, mode: str) -> None:
+        self._last_operating_mode = mode
+        self.top_bar.set_mode(f"MODE: {mode}")
 
     def _on_vda_status(self, msg: str) -> None:
         # Avoid spamming unchanged status lines every state tick.
@@ -118,7 +146,9 @@ class MainWindow(QMainWindow):
         self.sidebar_panel.execute_mission_requested.connect(self._on_execute_mission)
 
     def _on_tab_changed(self, index: int):
-        self.top_bar.set_mode(_MODE_LABELS[index])
+        # Use tab text only before we receive live operating mode from VDA state.
+        if self._last_operating_mode is None:
+            self.top_bar.set_mode(_MODE_LABELS[index])
 
     def _on_save_mission(self):
         QMessageBox.information(
