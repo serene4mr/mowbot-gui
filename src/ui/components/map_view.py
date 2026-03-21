@@ -88,3 +88,26 @@ class MapView(QWebEngineView):
             f"{{ updateRobotPosition({lat}, {lon}, {heading_deg}); }}"
         )
         self.page().runJavaScript(js)
+
+    def add_teach_point(self, lat: float, lon: float) -> None:
+        js = (
+            "if (typeof addTeachPoint === 'function') "
+            f"{{ addTeachPoint({lat}, {lon}); }}"
+        )
+        self.page().runJavaScript(js)
+
+    def undo_teach_point(self) -> None:
+        js = (
+            "if (typeof undoTeachPoint === 'function') { undoTeachPoint(); }"
+        )
+        self.page().runJavaScript(js)
+
+    def clear_teach_layer(self) -> None:
+        js = (
+            "if (typeof clearTeachLayer === 'function') { clearTeachLayer(); }"
+        )
+        self.page().runJavaScript(js)
+
+    def close_polygon(self) -> None:
+        js = "if (typeof closePolygon === 'function') { closePolygon(); }"
+        self.page().runJavaScript(js)

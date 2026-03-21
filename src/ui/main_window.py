@@ -9,10 +9,14 @@ All MQTT/VDA lifecycle lives in VDAController.
 All state formatting lives in AppState.
 """
 
+from __future__ import annotations
+
+import os
+import time
 from typing import Any, Dict, Optional
 
 from PySide6.QtWidgets import QMainWindow, QMessageBox
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent
 
 from core.app_state import AppState
@@ -26,6 +30,11 @@ from utils.logger import logger
 
 _MODE_LABELS = ("MODE: SYSTEM SETUP", "MODE: TEACH-IN", "MODE: AUTO-RUN")
 
+# Auto-record: time interval (ms) and minimum travel (m) since last waypoint
+_AUTO_RECORD_INTERVAL_MS = 2000
+_AUTO_RECORD_MIN_DISTANCE_M = 2.0
+_AUTO_RECORD_MIN_INTERVAL_S = 1.0
+
 
 class MainWindow(QMainWindow):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -35,6 +44,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Mowbot Control GUMI")
         self.resize(1280, 800)
         self.setStyleSheet(theme.MAIN_WINDOW_STYLE)
+
+        self._last_auto_distance_log_mono: float = 0.0
 
         self._app_state = AppState(self)
 
@@ -47,12 +58,41 @@ class MainWindow(QMainWindow):
         self.hud_panel = LeftHUD(self)
         self.sidebar_panel = RightSidebar(self)
 
+        self._auto_record_timer = QTimer(self)
+        self._auto_record_timer.setInterval(_AUTO_RECORD_INTERVAL_MS)
+        self._auto_record_timer.timeout.connect(self._on_auto_record_tick)
+
         self._connect_state()
         self._connect_sidebar()
         self._init_robot_id()
+        self._refresh_mission_files()
+        self.sidebar_panel.update_tch_stats(0, -1.0)
+        self.sidebar_panel.set_tch_mode_buttons("PATH")
 
         # VDA controller owns bridge lifecycle and writes into AppState
         self._vda = VDAController(self.config, self._app_state, parent=self)
+
+    def _project_root(self) -> str:
+        return os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+
+    def _missions_dir(self) -> str:
+        sub = (self.config.get("missions") or {}).get("directory", "missions")
+        return os.path.join(self._project_root(), sub)
+
+    def _refresh_mission_files(self) -> None:
+        d = self._missions_dir()
+        names: list[str] = []
+        if os.path.isdir(d):
+            paths = [
+                os.path.join(d, f)
+                for f in os.listdir(d)
+                if f.endswith(".json") and os.path.isfile(os.path.join(d, f))
+            ]
+            paths.sort(key=os.path.getmtime, reverse=True)
+            names = [os.path.basename(p) for p in paths]
+        self.sidebar_panel.set_mission_files(names)
 
     # ── State → UI wiring ─────────────────────────────────────
 
@@ -62,8 +102,18 @@ class MainWindow(QMainWindow):
         s.mode_changed.connect(lambda m: self.top_bar.set_mode(f"MODE: {m}"))
         s.position_changed.connect(self.hud_panel.update_telemetry)
         s.position_changed.connect(self._update_map_marker)
+        s.position_changed.connect(self._maybe_auto_record_on_distance)
         s.robot_id_changed.connect(self.top_bar.set_robot_id)
         s.error_changed.connect(self._on_error)
+
+        s.tch_point_added.connect(self._on_tch_point_added)
+        s.tch_point_undone.connect(self._on_tch_point_undone)
+        s.tch_cleared.connect(self.map_view.clear_teach_layer)
+        s.tch_mode_changed.connect(self.sidebar_panel.set_tch_mode_buttons)
+        s.tch_stats_changed.connect(self.sidebar_panel.update_tch_stats)
+        s.tch_auto_record_changed.connect(self._on_tch_auto_record_state)
+        s.tch_error.connect(self._on_tch_error)
+        s.tch_session_saved.connect(self._on_tch_session_saved)
 
     def _update_map_marker(
         self, x: float, y: float, theta_deg: float, _speed: float
@@ -72,6 +122,53 @@ class MainWindow(QMainWindow):
 
     def _on_error(self, msg: str) -> None:
         logger.info(f"[VDA] {msg}")
+
+    def _on_tch_point_added(self, lat: float, lon: float, _count: int) -> None:
+        self.map_view.add_teach_point(lat, lon)
+
+    def _on_tch_point_undone(self, _count: int) -> None:
+        self.map_view.undo_teach_point()
+
+    def _on_tch_auto_record_state(self, on: bool) -> None:
+        self.sidebar_panel.set_auto_record_ui(on)
+        if on:
+            self._auto_record_timer.start()
+        else:
+            self._auto_record_timer.stop()
+
+    def _on_auto_record_tick(self) -> None:
+        self._app_state.tch_log_point()
+
+    def _maybe_auto_record_on_distance(
+        self, _x: float, _y: float, _theta: float, _speed: float
+    ) -> None:
+        if not self._app_state.tch_auto_record:
+            return
+        if not self._app_state.tch_points:
+            return
+        dist = self._app_state.tch_distance_since_last_point_m()
+        if dist is None or dist < _AUTO_RECORD_MIN_DISTANCE_M:
+            return
+        now = time.monotonic()
+        if now - self._last_auto_distance_log_mono < _AUTO_RECORD_MIN_INTERVAL_S:
+            return
+        if self._app_state.tch_log_point():
+            self._last_auto_distance_log_mono = now
+
+    def _on_tch_error(self, msg: str) -> None:
+        QMessageBox.warning(self, "Teach-In", msg)
+
+    def _on_tch_session_saved(self, filename: str) -> None:
+        QMessageBox.information(
+            self,
+            "Mission saved",
+            f"Saved as {filename}",
+        )
+        self.map_view.clear_teach_layer()
+        self._refresh_mission_files()
+        self.sidebar_panel.select_mission_file(filename)
+        # Stay on teach-in; RUN mission list is still updated for when you switch later.
+        self.sidebar_panel.switch_tab(1)
 
     # ── Robot identity ────────────────────────────────────────
 
@@ -87,24 +184,37 @@ class MainWindow(QMainWindow):
     def _connect_sidebar(self) -> None:
         sb = self.sidebar_panel
         sb.tab_changed.connect(self._on_tab_changed)
-        sb.save_mission_requested.connect(self._on_save_mission)
+        sb.save_mission_requested.connect(self._on_finish_teach_save)
         sb.estop_pressed.connect(self._on_estop)
         sb.start_system_state_changed.connect(self._on_start_system)
         sb.log_point_requested.connect(self._on_log_point)
-        sb.auto_record_clicked.connect(self._on_auto_record)
+        sb.auto_record_clicked.connect(self._on_auto_record_toggle)
+        sb.undo_requested.connect(self._on_teach_undo)
+        sb.clear_teach_requested.connect(self._on_teach_clear)
+        sb.tch_mode_path_selected.connect(lambda: self._app_state.tch_set_mode("PATH"))
+        sb.tch_mode_poly_selected.connect(lambda: self._app_state.tch_set_mode("POLY"))
+        sb.tch_session_stopped.connect(self._on_tch_session_stopped)
         sb.execute_mission_requested.connect(self._on_execute_mission)
 
     def _on_tab_changed(self, index: int) -> None:
         if self._app_state.operating_mode is None:
             self.top_bar.set_mode(_MODE_LABELS[index])
 
-    def _on_save_mission(self) -> None:
-        QMessageBox.information(
-            self,
-            "Save Mission",
-            "Mission 'Lawn_Zone_A_01' saved successfully!\n\nSwitching to AUTO-RUN mode.",
-        )
-        self.sidebar_panel.switch_tab(2)
+    def _on_tch_session_stopped(self) -> None:
+        if self._app_state.tch_auto_record:
+            self._app_state.tch_set_auto_record(False)
+
+    def _on_finish_teach_save(self) -> None:
+        err = self._app_state.validate_teach_save()
+        if err:
+            QMessageBox.warning(self, "Teach-In", err)
+            return
+        if self._app_state.tch_mode == "POLY":
+            self.map_view.close_polygon()
+        _, err2 = self._app_state.teach_save_to_disk(self._missions_dir())
+        if err2:
+            QMessageBox.warning(self, "Teach-In", err2)
+            return
 
     def _on_estop(self) -> None:
         logger.critical("E-STOP pressed from UI")
@@ -114,10 +224,16 @@ class MainWindow(QMainWindow):
         logger.info(f"System running state: {is_running}")
 
     def _on_log_point(self) -> None:
-        logger.info("LOG POINT (teach-in)")
+        self._app_state.tch_log_point()
 
-    def _on_auto_record(self) -> None:
-        logger.info("AUTO-RECORD clicked")
+    def _on_auto_record_toggle(self) -> None:
+        self._app_state.tch_toggle_auto_record()
+
+    def _on_teach_undo(self) -> None:
+        self._app_state.tch_undo()
+
+    def _on_teach_clear(self) -> None:
+        self._app_state.tch_clear_session()
 
     def _on_execute_mission(self) -> None:
         logger.info("EXECUTE MISSION")

@@ -15,9 +15,11 @@ ACCENT_BLUE = "#00B0FF"
 ACCENT_RED = "#D50000"
 ACCENT_RED_PRESSED = "#9b0000"
 ACCENT_ORANGE = "#FF6D00"
+ACCENT_YELLOW = "#FFD600"
 
 TEXT_PRIMARY = "#E0E0E0"
 TEXT_WHITE = "white"
+TEXT_MUTED = "#8a8a8a"
 
 BUTTON_BG = "#333"
 BUTTON_BG_DARK = "#424242"
@@ -55,6 +57,10 @@ TAB_BUTTON_STYLE = f"""
         border-radius: 5px; padding: 10px; font-weight: bold;
     }}
     QPushButton:checked {{ background-color: {ACCENT_BLUE}; }}
+    QPushButton:disabled {{
+        background-color: #252525;
+        color: #5c5c5c;
+    }}
 """
 
 ESTOP_STYLE = f"""
@@ -71,14 +77,16 @@ def action_button_style(bg: str = BUTTON_BG_DARK, bold: bool = False) -> str:
     """Generic action button (sidebar buttons, LOG POINT, etc.)."""
     weight = "font-weight: bold; " if bold else ""
     return (
-        f"background-color: {bg}; color: {TEXT_WHITE}; padding: 15px; "
-        f"border-radius: 8px; margin-bottom: 5px; {weight}"
+        f"QPushButton {{ background-color: {bg}; color: {TEXT_WHITE}; padding: 15px; "
+        f"border-radius: 8px; margin-bottom: 5px; {weight}}}"
+        f"QPushButton:disabled {{ background-color: #2e2e2e; color: #5a5a5a; }}"
     )
 
 
 def primary_button_style(bg: str = BUTTON_START) -> str:
     """Large call-to-action button (START SYSTEM, EXECUTE MISSION)."""
     return (
-        f"background-color: {bg}; color: {TEXT_WHITE}; font-size: {FONT_LG}px; "
-        f"font-weight: bold; padding: 20px; border-radius: 8px;"
+        f"QPushButton {{ background-color: {bg}; color: {TEXT_WHITE}; font-size: {FONT_LG}px; "
+        f"font-weight: bold; padding: 20px; border-radius: 8px; }}"
+        f"QPushButton:disabled {{ background-color: #2e2e2e; color: #5a5a5a; }}"
     )

@@ -81,6 +81,12 @@
 
             map.flyTo({ center: [lng, lat], zoom: TRACK_ZOOM, animate: false });
         }
+
+        // Teach-in stubs (use MOWBOT_MAP_BACKEND=leaflet for full teach-in drawing)
+        function addTeachPoint(lat, lng) { console.warn('addTeachPoint not implemented for MapLibre'); }
+        function undoTeachPoint() { console.warn('undoTeachPoint not implemented for MapLibre'); }
+        function clearTeachLayer() {}
+        function closePolygon() { console.warn('closePolygon not implemented for MapLibre'); }
     </script>
 </body>
 </html>

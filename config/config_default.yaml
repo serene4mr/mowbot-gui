@@ -12,3 +12,7 @@ broker:
   use_tls: false              # Set to true for HiveMQ Cloud
   user: ""                    # MQTT username
   password: ""                # MQTT password
+
+# Teach-in missions (JSON) written under project root by default
+missions:
+  directory: "missions"

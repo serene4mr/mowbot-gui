@@ -57,6 +57,90 @@
             }
             map.setView([lat, lng], TRACK_ZOOM, { animate: false });
         }
+
+        // ── Teach-in overlay (PATH polyline / POLY polygon) ─────────────
+        var teachGroup = L.layerGroup().addTo(map);
+        var teachMarkers = [];
+        var teachPolyline = null;
+        var teachPolygon = null;
+
+        function _rebuildTeachPolyline() {
+            if (teachPolyline) {
+                teachGroup.removeLayer(teachPolyline);
+                teachPolyline = null;
+            }
+            if (teachPolygon) {
+                teachGroup.removeLayer(teachPolygon);
+                teachPolygon = null;
+            }
+            const ll = teachMarkers.map(function (m) { return m.getLatLng(); });
+            if (ll.length >= 2) {
+                teachPolyline = L.polyline(ll, { color: '#00E676', weight: 3, opacity: 0.95 }).addTo(teachGroup);
+            }
+        }
+
+        function addTeachPoint(lat, lng) {
+            if (teachPolygon) {
+                teachGroup.removeLayer(teachPolygon);
+                teachPolygon = null;
+            }
+            const m = L.circleMarker([lat, lng], {
+                radius: 6,
+                color: '#00B0FF',
+                weight: 2,
+                fillColor: '#00B0FF',
+                fillOpacity: 0.9
+            }).addTo(teachGroup);
+            teachMarkers.push(m);
+            _rebuildTeachPolyline();
+        }
+
+        function undoTeachPoint() {
+            if (teachMarkers.length === 0) return;
+            const m = teachMarkers.pop();
+            teachGroup.removeLayer(m);
+            if (teachPolyline) {
+                teachGroup.removeLayer(teachPolyline);
+                teachPolyline = null;
+            }
+            if (teachPolygon) {
+                teachGroup.removeLayer(teachPolygon);
+                teachPolygon = null;
+            }
+            _rebuildTeachPolyline();
+        }
+
+        function clearTeachLayer() {
+            teachMarkers.forEach(function (m) { teachGroup.removeLayer(m); });
+            teachMarkers = [];
+            if (teachPolyline) {
+                teachGroup.removeLayer(teachPolyline);
+                teachPolyline = null;
+            }
+            if (teachPolygon) {
+                teachGroup.removeLayer(teachPolygon);
+                teachPolygon = null;
+            }
+        }
+
+        function closePolygon() {
+            const ll = teachMarkers.map(function (m) { return m.getLatLng(); });
+            if (ll.length < 3) return;
+            if (teachPolyline) {
+                teachGroup.removeLayer(teachPolyline);
+                teachPolyline = null;
+            }
+            if (teachPolygon) {
+                teachGroup.removeLayer(teachPolygon);
+                teachPolygon = null;
+            }
+            teachPolygon = L.polygon(ll, {
+                color: '#00E676',
+                weight: 3,
+                fillColor: '#00E676',
+                fillOpacity: 0.28
+            }).addTo(teachGroup);
+        }
     </script>
 </body>
 </html>

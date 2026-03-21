@@ -1,5 +1,9 @@
 """Right sidebar: SET / TCH / RUN tabs, actions, and E-stop."""
 
+from __future__ import annotations
+
+from typing import Iterable, Optional
+
 from PySide6.QtWidgets import (
     QFrame,
     QVBoxLayout,
@@ -10,6 +14,8 @@ from PySide6.QtWidgets import (
     QComboBox,
     QProgressBar,
     QWidget,
+    QMessageBox,
+    QGraphicsOpacityEffect,
 )
 from PySide6.QtCore import Signal
 
@@ -23,13 +29,21 @@ class RightSidebar(QFrame):
     estop_pressed = Signal()
     log_point_requested = Signal()
     auto_record_clicked = Signal()
+    undo_requested = Signal()
+    clear_teach_requested = Signal()
+    tch_mode_path_selected = Signal()
+    tch_mode_poly_selected = Signal()
+    tch_session_started = Signal()
+    tch_session_stopped = Signal()
     execute_mission_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._tch_session_active: bool = False
         self.setStyleSheet(theme.PANEL_STYLE)
         self._setup_ui()
         self._wire_signals()
+        self.set_tch_recording_active(False)
 
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -79,23 +93,67 @@ class RightSidebar(QFrame):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        layout.addWidget(QLabel("TYPE: [ PATH ] | [ POLY ]"))
-        layout.addWidget(QLabel("Waypoints: 24\nArea: ~150 m^2\n"))
+        self.btn_tch_toggle = QPushButton("START TEACH-IN")
+        self.btn_tch_toggle.setStyleSheet(theme.primary_button_style(theme.BUTTON_START))
+        layout.addWidget(self.btn_tch_toggle)
+
+        self.lbl_tch_session_status = QLabel()
+        self.lbl_tch_session_status.setWordWrap(True)
+        self.lbl_tch_session_status.setStyleSheet(
+            f"color: {theme.TEXT_MUTED}; font-size: {theme.FONT_XS}px; "
+            "padding: 4px 2px 8px 2px;"
+        )
+        layout.addWidget(self.lbl_tch_session_status)
+
+        # Everything below is disabled until START is pressed (dimmed + non-interactive).
+        self._tch_session_widget = QWidget()
+        body = QVBoxLayout(self._tch_session_widget)
+        body.setContentsMargins(0, 0, 0, 0)
+
+        self._tch_session_opacity = QGraphicsOpacityEffect(self._tch_session_widget)
+        self._tch_session_widget.setGraphicsEffect(self._tch_session_opacity)
+
+        mode_row = QHBoxLayout()
+        self.btn_tch_path = QPushButton("PATH")
+        self.btn_tch_poly = QPushButton("POLY")
+        for b in (self.btn_tch_path, self.btn_tch_poly):
+            b.setCheckable(True)
+            b.setStyleSheet(theme.TAB_BUTTON_STYLE)
+            mode_row.addWidget(b)
+        self.btn_tch_path.setChecked(True)
+        body.addWidget(QLabel("Recording type:"))
+        body.addLayout(mode_row)
+
+        self.lbl_tch_waypoints = QLabel("Waypoints: 0")
+        self.lbl_tch_area = QLabel("Area: —")
+        for lbl in (self.lbl_tch_waypoints, self.lbl_tch_area):
+            lbl.setStyleSheet(f"font-size: {theme.FONT_MD}px;")
+        body.addWidget(self.lbl_tch_waypoints)
+        body.addWidget(self.lbl_tch_area)
 
         self.btn_log = QPushButton("LOG POINT")
-        self.btn_auto = QPushButton("AUTO-RECORD (ON)")
-        self.btn_save = QPushButton("FINISH & SAVE")
+        self.btn_auto = QPushButton("AUTO-RECORD (OFF)")
+        self.btn_undo = QPushButton("UNDO")
+        self.btn_clear = QPushButton("CLEAR / RESTART")
+        self.btn_save = QPushButton("SAVE")
 
         self.btn_log.setStyleSheet(theme.action_button_style())
         self.btn_auto.setStyleSheet(theme.action_button_style())
+        self.btn_undo.setStyleSheet(theme.action_button_style())
+        self.btn_clear.setStyleSheet(theme.action_button_style(bg=theme.ACCENT_RED, bold=True))
         self.btn_save.setStyleSheet(
             theme.action_button_style(bg=theme.ACCENT_ORANGE, bold=True)
-            + " margin-top: 10px;"
+            + " QPushButton { margin-top: 10px; }"
         )
 
-        layout.addWidget(self.btn_log)
-        layout.addWidget(self.btn_auto)
-        layout.addWidget(self.btn_save)
+        body.addWidget(self.btn_log)
+        body.addWidget(self.btn_auto)
+        body.addWidget(self.btn_undo)
+        body.addWidget(self.btn_clear)
+        body.addWidget(self.btn_save)
+        body.addStretch()
+
+        layout.addWidget(self._tch_session_widget)
         layout.addStretch()
         return page
 
@@ -104,7 +162,6 @@ class RightSidebar(QFrame):
         layout = QVBoxLayout(page)
 
         self.combo_mission = QComboBox()
-        self.combo_mission.addItems(["Lawn_Zone_A_01.json", "Backyard_Path.json"])
         self.combo_mission.setStyleSheet(
             f"background-color: {theme.BUTTON_BG}; padding: 10px; "
             f"font-size: {theme.FONT_SM}px;"
@@ -112,7 +169,7 @@ class RightSidebar(QFrame):
 
         self.btn_execute = QPushButton("EXECUTE MISSION")
         self.btn_execute.setStyleSheet(
-            theme.primary_button_style(theme.BUTTON_EXECUTE) + " margin-top: 10px;"
+            theme.primary_button_style(theme.BUTTON_EXECUTE) + " QPushButton { margin-top: 10px; }"
         )
 
         layout.addWidget(QLabel("Select Mission:"))
@@ -137,7 +194,65 @@ class RightSidebar(QFrame):
         self.btn_estop.clicked.connect(self.estop_pressed.emit)
         self.btn_log.clicked.connect(self.log_point_requested.emit)
         self.btn_auto.clicked.connect(self.auto_record_clicked.emit)
+        self.btn_undo.clicked.connect(self.undo_requested.emit)
+        self.btn_clear.clicked.connect(self._on_clear_clicked)
+        self.btn_tch_path.clicked.connect(self._on_path_mode)
+        self.btn_tch_poly.clicked.connect(self._on_poly_mode)
+        self.btn_tch_toggle.clicked.connect(self._on_tch_toggle_clicked)
         self.btn_execute.clicked.connect(self.execute_mission_requested.emit)
+
+    def _on_path_mode(self) -> None:
+        self.btn_tch_path.setChecked(True)
+        self.btn_tch_poly.setChecked(False)
+        self.tch_mode_path_selected.emit()
+
+    def _on_poly_mode(self) -> None:
+        self.btn_tch_poly.setChecked(True)
+        self.btn_tch_path.setChecked(False)
+        self.tch_mode_poly_selected.emit()
+
+    def _on_tch_toggle_clicked(self) -> None:
+        if self._tch_session_active:
+            self.set_tch_recording_active(False)
+            self.tch_session_stopped.emit()
+        else:
+            self.set_tch_recording_active(True)
+            self.tch_session_started.emit()
+
+    def _refresh_tch_toggle_appearance(self) -> None:
+        if self._tch_session_active:
+            self.btn_tch_toggle.setText("STOP TEACH-IN")
+            self.btn_tch_toggle.setStyleSheet(theme.primary_button_style(theme.ACCENT_RED))
+            self.lbl_tch_session_status.setText(
+                "Teach-in active — controls below are enabled. "
+                "SET and RUN tabs are locked. Press STOP when done."
+            )
+        else:
+            self.btn_tch_toggle.setText("START TEACH-IN")
+            self.btn_tch_toggle.setStyleSheet(theme.primary_button_style(theme.BUTTON_START))
+            self.lbl_tch_session_status.setText(
+                "Press START to unlock recording controls. SET and RUN stay locked during teach-in."
+            )
+
+    def set_tch_recording_active(self, active: bool) -> None:
+        """When active: enable TCH tools and lock SET/RUN tabs. When inactive: reverse."""
+        self._tch_session_active = active
+        self._tch_session_widget.setEnabled(active)
+        self._tch_session_opacity.setOpacity(1.0 if active else 0.38)
+        self.btn_tab_set.setEnabled(not active)
+        self.btn_tab_run.setEnabled(not active)
+        self._refresh_tch_toggle_appearance()
+
+    def _on_clear_clicked(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            "Clear teach-in",
+            "Discard all logged waypoints and clear the map?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.clear_teach_requested.emit()
 
     def switch_tab(self, index: int) -> None:
         self.stacked_widget.setCurrentIndex(index)
@@ -145,6 +260,42 @@ class RightSidebar(QFrame):
         self.btn_tab_tch.setChecked(index == 1)
         self.btn_tab_run.setChecked(index == 2)
         self.tab_changed.emit(index)
+
+    def set_tch_mode_buttons(self, mode: str) -> None:
+        m = (mode or "PATH").upper()
+        if m == "POLY":
+            self.btn_tch_poly.setChecked(True)
+            self.btn_tch_path.setChecked(False)
+        else:
+            self.btn_tch_path.setChecked(True)
+            self.btn_tch_poly.setChecked(False)
+
+    def update_tch_stats(self, waypoint_count: int, area_m2: float) -> None:
+        self.lbl_tch_waypoints.setText(f"Waypoints: {waypoint_count}")
+        if area_m2 >= 0:
+            self.lbl_tch_area.setText(f"Area: ~{area_m2:.1f} m²")
+        else:
+            self.lbl_tch_area.setText("Area: —")
+
+    def set_auto_record_ui(self, active: bool) -> None:
+        if active:
+            self.btn_auto.setText("AUTO-RECORD (ON)")
+            self.btn_auto.setStyleSheet(
+                theme.action_button_style(bg=theme.ACCENT_YELLOW, bold=True)
+            )
+        else:
+            self.btn_auto.setText("AUTO-RECORD (OFF)")
+            self.btn_auto.setStyleSheet(theme.action_button_style())
+
+    def set_mission_files(self, filenames: Iterable[str]) -> None:
+        self.combo_mission.clear()
+        for name in filenames:
+            self.combo_mission.addItem(name)
+
+    def select_mission_file(self, filename: str) -> None:
+        idx = self.combo_mission.findText(filename)
+        if idx >= 0:
+            self.combo_mission.setCurrentIndex(idx)
 
     def _toggle_start_system(self) -> None:
         starting = "START" in self.btn_start_system.text()
