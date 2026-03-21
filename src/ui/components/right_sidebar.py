@@ -36,6 +36,7 @@ class RightSidebar(QFrame):
     tch_session_started = Signal()
     tch_session_stopped = Signal()
     execute_mission_requested = Signal()
+    delete_mission_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -174,6 +175,13 @@ class RightSidebar(QFrame):
 
         layout.addWidget(QLabel("Select Mission:"))
         layout.addWidget(self.combo_mission)
+
+        self.btn_delete_mission = QPushButton("DELETE MISSION")
+        self.btn_delete_mission.setStyleSheet(
+            theme.action_button_style(bg=theme.ACCENT_RED, bold=True)
+        )
+        layout.addWidget(self.btn_delete_mission)
+
         layout.addWidget(self.btn_execute)
         layout.addWidget(QLabel("\nProgress: 65%"))
 
@@ -200,6 +208,7 @@ class RightSidebar(QFrame):
         self.btn_tch_poly.clicked.connect(self._on_poly_mode)
         self.btn_tch_toggle.clicked.connect(self._on_tch_toggle_clicked)
         self.btn_execute.clicked.connect(self.execute_mission_requested.emit)
+        self.btn_delete_mission.clicked.connect(self.delete_mission_requested.emit)
 
     def _on_path_mode(self) -> None:
         self.btn_tch_path.setChecked(True)
@@ -288,9 +297,15 @@ class RightSidebar(QFrame):
             self.btn_auto.setStyleSheet(theme.action_button_style())
 
     def set_mission_files(self, filenames: Iterable[str]) -> None:
+        names = list(filenames)
         self.combo_mission.clear()
-        for name in filenames:
+        for name in names:
             self.combo_mission.addItem(name)
+        self.btn_delete_mission.setEnabled(len(names) > 0)
+
+    def current_mission_filename(self) -> Optional[str]:
+        text = self.combo_mission.currentText().strip()
+        return text if text else None
 
     def select_mission_file(self, filename: str) -> None:
         idx = self.combo_mission.findText(filename)

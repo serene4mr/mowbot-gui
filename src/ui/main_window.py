@@ -81,6 +81,20 @@ class MainWindow(QMainWindow):
         sub = (self.config.get("missions") or {}).get("directory", "missions")
         return os.path.join(self._project_root(), sub)
 
+    def _safe_mission_path(self, filename: str) -> Optional[str]:
+        """Resolve a mission JSON path under missions dir only (no traversal)."""
+        raw = str(filename).strip()
+        name = os.path.basename(raw)
+        if not name or name != raw:
+            return None
+        if ".." in name or not name.endswith(".json"):
+            return None
+        base = os.path.realpath(self._missions_dir())
+        full = os.path.realpath(os.path.join(base, name))
+        if not full.startswith(base + os.sep):
+            return None
+        return full
+
     def _refresh_mission_files(self) -> None:
         d = self._missions_dir()
         names: list[str] = []
@@ -195,6 +209,7 @@ class MainWindow(QMainWindow):
         sb.tch_mode_poly_selected.connect(lambda: self._app_state.tch_set_mode("POLY"))
         sb.tch_session_stopped.connect(self._on_tch_session_stopped)
         sb.execute_mission_requested.connect(self._on_execute_mission)
+        sb.delete_mission_requested.connect(self._on_delete_mission)
 
     def _on_tab_changed(self, index: int) -> None:
         if self._app_state.operating_mode is None:
@@ -237,6 +252,37 @@ class MainWindow(QMainWindow):
 
     def _on_execute_mission(self) -> None:
         logger.info("EXECUTE MISSION")
+
+    def _on_delete_mission(self) -> None:
+        name = self.sidebar_panel.current_mission_filename()
+        if not name:
+            QMessageBox.information(self, "Delete mission", "No mission selected.")
+            return
+        path = self._safe_mission_path(name)
+        if path is None or not os.path.isfile(path):
+            QMessageBox.warning(
+                self,
+                "Delete mission",
+                "Invalid mission name or file not found.",
+            )
+            return
+        reply = QMessageBox.question(
+            self,
+            "Delete mission",
+            f"Permanently delete this file?\n\n{name}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            os.remove(path)
+        except OSError as exc:
+            QMessageBox.warning(self, "Delete mission", str(exc))
+            return
+        logger.info(f"Deleted mission file: {name}")
+        self._refresh_mission_files()
+        QMessageBox.information(self, "Delete mission", f"Deleted {name}.")
 
     # ── Lifecycle ─────────────────────────────────────────────
 
