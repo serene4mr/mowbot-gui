@@ -11,6 +11,7 @@ from vda5050.clients.master_control import MasterControlClient
 from vda5050.models.state import State
 from vda5050.models.base import Action, BlockingType
 from vda5050.models.instant_action import InstantActions
+from utils.logger import logger
 
 class VDA5050BridgeThread(QThread):
     # ==========================================
@@ -68,7 +69,7 @@ class VDA5050BridgeThread(QThread):
         self.client.on_state_update(self._on_state_received)
 
         try:
-            print(f"[VDA Bridge] Connecting to MQTT Broker {self.host}:{self.port}...")
+            logger.info(f"Connecting to MQTT broker {self.host}:{self.port}")
             success = await self.client.connect()
             self.connection_status.emit(success)
 
@@ -77,7 +78,7 @@ class VDA5050BridgeThread(QThread):
                 await asyncio.sleep(0.5)
 
         except Exception as e:
-            print(f"[VDA Bridge] Connection Error: {e}")
+            logger.error(f"Connection error: {e}")
             self.connection_status.emit(False)
         finally:
             if self.client and self.client.is_connected():
@@ -97,7 +98,7 @@ class VDA5050BridgeThread(QThread):
 
         if not self._logged_first_state:
             ap = state.agvPosition
-            print(
+            logger.info(
                 "[VDA Bridge] First state received: "
                 f"agvPosition={'yes' if ap else 'no'}, "
                 f"positionInitialized={getattr(ap, 'positionInitialized', None) if ap else 'n/a'}"
@@ -157,7 +158,7 @@ class VDA5050BridgeThread(QThread):
 
     async def _send_estop_async(self):
         """Constructs and sends the VDA5050 InstantAction for E-STOP."""
-        print("[VDA Bridge] Initiating Emergency Stop Sequence...")
+        logger.warning("Initiating Emergency Stop sequence")
         
         # 'stop' is a standardized actionType in VDA 5050
         action = Action(

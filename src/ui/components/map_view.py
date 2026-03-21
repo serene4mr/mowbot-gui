@@ -9,6 +9,7 @@ from typing import Sequence
 from PySide6.QtCore import QUrl
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
+from utils.logger import logger
 
 
 class MapView(QWebEngineView):
@@ -43,7 +44,7 @@ class MapView(QWebEngineView):
         html_path = os.path.abspath(self._map_html_path())
 
         if not os.path.exists(html_path):
-            print(f"\u274c ERROR: Cannot find map file at: {html_path}")
+            logger.error(f"Cannot find map file at: {html_path}")
             safe = html.escape(html_path, quote=True)
             self.setHtml(
                 f"<body style='background: #500; color: white; font-family: sans-serif; "
@@ -52,9 +53,9 @@ class MapView(QWebEngineView):
             )
             return
 
-        print(f"\u2705 SUCCESS: Loading map from: {html_path}")
+        logger.info(f"Loading map from: {html_path}")
         if html_path.endswith("esri_map.html"):
-            print(
+            logger.info(
                 "   (MapLibre/WebGL). If tiles stay blank, try: "
                 "MOWBOT_MAP_BACKEND=leaflet"
             )

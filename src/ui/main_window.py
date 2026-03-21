@@ -12,6 +12,7 @@ from ui.components.map_view import MapView
 from ui.components.top_bar import TopBar
 from ui.components.left_hud import LeftHUD
 from ui.components.right_sidebar import RightSidebar
+from utils.logger import logger
 
 
 _MODE_LABELS = ("MODE: SYSTEM SETUP", "MODE: TEACH-IN", "MODE: AUTO-RUN")
@@ -38,6 +39,7 @@ class MainWindow(QMainWindow):
         self._last_battery_pct: Optional[float] = None
         self._mqtt_ok = False
         self._vda_bridge: Optional[VDA5050BridgeThread] = None
+        self._last_vda_status: Optional[str] = None
 
         serial = self.config.get("general", {}).get("serial_number")
         if serial:
@@ -68,18 +70,16 @@ class MainWindow(QMainWindow):
         self._vda_bridge.connection_status.connect(self._on_mqtt_connection)
         self._vda_bridge.battery_updated.connect(self._on_battery)
         self._vda_bridge.position_updated.connect(self._on_vda_position)
-        self._vda_bridge.error_updated.connect(
-            lambda msg: print(f"[VDA] {msg}")
-        )
+        self._vda_bridge.error_updated.connect(self._on_vda_status)
         self._vda_bridge.start()
-        print(
+        logger.info(
             f"[VDA] Bridge thread started (broker {host}:{port}, "
             f"robot serial={serial}, manufacturer={manufacturer})"
         )
 
     def _on_mqtt_connection(self, connected: bool) -> None:
         self._mqtt_ok = connected
-        print(f"[MQTT] {'connected' if connected else 'disconnected'}")
+        logger.info(f"[MQTT] {'connected' if connected else 'disconnected'}")
         self._refresh_status_line()
 
     def _on_battery(self, pct: float) -> None:
@@ -96,6 +96,13 @@ class MainWindow(QMainWindow):
         self, x: float, y: float, theta_deg: float, speed_mps: float
     ) -> None:
         self.hud_panel.update_telemetry(x, y, theta_deg, speed_mps)
+
+    def _on_vda_status(self, msg: str) -> None:
+        # Avoid spamming unchanged status lines every state tick.
+        if msg == self._last_vda_status:
+            return
+        self._last_vda_status = msg
+        logger.info(f"[VDA] {msg}")
 
     def _connect_components(self):
         self.sidebar_panel.tab_changed.connect(self._on_tab_changed)
@@ -120,22 +127,22 @@ class MainWindow(QMainWindow):
         self.sidebar_panel.switch_tab(2)
 
     def _on_estop(self):
-        print("CRITICAL: E-STOP PRESSED!")
+        logger.critical("E-STOP pressed from UI")
         if self._vda_bridge is not None:
             self._vda_bridge.trigger_estop()
 
     def _on_start_system_state_changed(self, is_running: bool):
         # Hook for MQTT / robot power commands
-        print(f"System running state: {is_running}")
+        logger.info(f"System running state: {is_running}")
 
     def _on_log_point(self):
-        print("LOG POINT (teach-in)")
+        logger.info("LOG POINT (teach-in)")
 
     def _on_auto_record(self):
-        print("AUTO-RECORD clicked")
+        logger.info("AUTO-RECORD clicked")
 
     def _on_execute_mission(self):
-        print("EXECUTE MISSION")
+        logger.info("EXECUTE MISSION")
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self._vda_bridge is not None:

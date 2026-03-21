@@ -28,6 +28,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer
 from ui.main_window import MainWindow
 from utils.config import load_config
+from utils.logger import logger
 
 def main():
     config = load_config()
@@ -44,7 +45,7 @@ def main():
 
     def _graceful_shutdown(signum, _frame):
         signal_name = signal.Signals(signum).name
-        print(f"\nShutdown requested ({signal_name}); closing Qt app...")
+        logger.info(f"Shutdown requested ({signal_name}); closing Qt app...")
         app.quit()
 
     # Handle terminal and process-manager stop signals gracefully.
