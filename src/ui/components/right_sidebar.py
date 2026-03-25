@@ -41,11 +41,13 @@ class RightSidebar(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._tch_session_active: bool = False
+        self._system_ready: bool = False
         self._docker_service_labels: Dict[str, QLabel] = {}
         self.setStyleSheet(theme.PANEL_STYLE)
         self._setup_ui()
         self._wire_signals()
         self.set_tch_recording_active(False)
+        self._apply_system_lock()
 
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -248,7 +250,7 @@ class RightSidebar(QFrame):
         self._tch_session_widget.setEnabled(active)
         self._tch_session_opacity.setOpacity(1.0 if active else 0.38)
         self.btn_tab_set.setEnabled(not active)
-        self.btn_tab_run.setEnabled(not active)
+        self.btn_tab_run.setEnabled(not active and self._system_ready)
         self._refresh_tch_toggle_appearance()
 
     def _on_clear_clicked(self) -> None:
@@ -367,7 +369,21 @@ class RightSidebar(QFrame):
             f"font-size: {theme.FONT_SM}px; color: {color}; font-weight: bold;"
         )
 
+    def _apply_system_lock(self) -> None:
+        """Enable/disable TCH and RUN tabs based on system readiness.
+
+        Respects teach-in session lock: if teach-in is active, SET and RUN
+        remain locked by the teach-in session regardless of system readiness.
+        E-STOP and the START SYSTEM button are never locked by this.
+        """
+        if self._tch_session_active:
+            return
+        self.btn_tab_tch.setEnabled(self._system_ready)
+        self.btn_tab_run.setEnabled(self._system_ready)
+
     def set_system_starting(self) -> None:
+        self._system_ready = False
+        self._apply_system_lock()
         self.btn_start_system.setText("STARTING...")
         self.btn_start_system.setEnabled(False)
         self.btn_start_system.setStyleSheet(
@@ -381,6 +397,8 @@ class RightSidebar(QFrame):
             )
 
     def set_system_stopping(self) -> None:
+        self._system_ready = False
+        self._apply_system_lock()
         self.btn_start_system.setText("STOPPING...")
         self.btn_start_system.setEnabled(False)
         self.btn_start_system.setStyleSheet(
@@ -388,6 +406,8 @@ class RightSidebar(QFrame):
         )
 
     def set_system_running(self) -> None:
+        self._system_ready = True
+        self._apply_system_lock()
         self.btn_start_system.setText("SHUTDOWN SYSTEM")
         self.btn_start_system.setEnabled(True)
         self.btn_start_system.setStyleSheet(
@@ -395,6 +415,8 @@ class RightSidebar(QFrame):
         )
 
     def set_system_stopped(self) -> None:
+        self._system_ready = False
+        self._apply_system_lock()
         self.btn_start_system.setText("START SYSTEM")
         self.btn_start_system.setEnabled(True)
         self.btn_start_system.setStyleSheet(
@@ -402,6 +424,8 @@ class RightSidebar(QFrame):
         )
 
     def set_system_failed(self) -> None:
+        self._system_ready = False
+        self._apply_system_lock()
         self.btn_start_system.setText("START SYSTEM")
         self.btn_start_system.setEnabled(True)
         self.btn_start_system.setStyleSheet(
