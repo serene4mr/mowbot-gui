@@ -25,7 +25,7 @@ teach_in:
 
 docker_containers:
   bringup_and_sensing:
-    container_name: 
+    container_name:
       - mowbot_uros_agent
       - mowbot_bringup_and_sensing
   localization:
@@ -34,3 +34,13 @@ docker_containers:
     container_name: mowbot_navigation
   app:
     container_name: mowbot_app
+
+docker_startup_sequence:
+  - key: bringup_and_sensing
+    settle_time_s: 5
+  - key: localization
+    settle_time_s: 5
+  - key: navigation
+    settle_time_s: 3
+  - key: app
+    settle_time_s: 2

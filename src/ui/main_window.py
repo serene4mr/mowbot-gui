@@ -21,6 +21,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent
 
 from core.app_state import AppState
+from core.docker_controller import DockerController
 from core.mission_builder import build_path_order
 from core.vda_controller import VDAController
 from ui.components.map_view import MapView
@@ -80,6 +81,13 @@ class MainWindow(QMainWindow):
 
         # VDA controller owns bridge lifecycle and writes into AppState
         self._vda = VDAController(self.config, self._app_state, parent=self)
+
+        # Docker controller manages container start/stop sequences
+        self._docker = DockerController(self.config, self._app_state, parent=self)
+        self.sidebar_panel.init_docker_service_labels(
+            self._docker.startup_sequence_keys()
+        )
+        self._system_starting = False
 
     def _project_root(self) -> str:
         return os.path.dirname(
@@ -184,6 +192,10 @@ class MainWindow(QMainWindow):
         s.tch_error.connect(self._on_tch_error)
         s.tch_session_saved.connect(self._on_tch_session_saved)
         s.order_dispatched.connect(self._on_order_dispatched)
+
+        s.docker_sequence_step.connect(self.sidebar_panel.set_docker_step_status)
+        s.docker_sequence_finished.connect(self._on_docker_sequence_finished)
+        s.docker_error.connect(self._on_docker_error)
 
     def _update_map_marker(
         self, x: float, y: float, theta_deg: float, _speed: float
@@ -304,8 +316,30 @@ class MainWindow(QMainWindow):
         logger.critical("E-STOP pressed from UI")
         self._vda.trigger_estop()
 
-    def _on_start_system(self, is_running: bool) -> None:
-        logger.info(f"System running state: {is_running}")
+    def _on_start_system(self, is_starting: bool) -> None:
+        if is_starting:
+            self._system_starting = True
+            logger.info("[Docker] Startup sequence requested")
+            self._docker.start_sequence()
+        else:
+            self._system_starting = False
+            logger.info("[Docker] Shutdown sequence requested")
+            self._docker.stop_sequence()
+
+    def _on_docker_sequence_finished(self, ok: bool, detail: str) -> None:
+        if ok and self._system_starting:
+            logger.info("[Docker] Startup complete: %s", detail)
+            self.sidebar_panel.set_system_running()
+        elif ok and not self._system_starting:
+            logger.info("[Docker] Shutdown complete: %s", detail)
+            self.sidebar_panel.set_system_stopped()
+        else:
+            logger.error("[Docker] Sequence failed: %s", detail)
+            self.sidebar_panel.set_system_failed()
+            QMessageBox.warning(self, "Docker", detail)
+
+    def _on_docker_error(self, key: str, msg: str) -> None:
+        logger.error("[Docker] %s: %s", key, msg)
 
     def _on_log_point(self) -> None:
         self._app_state.tch_log_point()
@@ -446,6 +480,7 @@ class MainWindow(QMainWindow):
     # ── Lifecycle ─────────────────────────────────────────────
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._docker.cancel_sequence()
         self._vda.stop()
         super().closeEvent(event)
 

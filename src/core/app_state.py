@@ -50,6 +50,10 @@ class AppState(QObject):
     docker_status_changed = Signal(str, str)  # key, status e.g. "running", "missing"
     docker_error = Signal(str, str)  # key, message
 
+    # Docker startup/shutdown sequence progress
+    docker_sequence_step = Signal(int, str, str)  # step_index, key, phase
+    docker_sequence_finished = Signal(bool, str)  # success, detail message
+
     def __init__(
         self,
         parent: Optional[QObject] = None,

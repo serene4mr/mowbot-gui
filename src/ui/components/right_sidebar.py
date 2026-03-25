@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Optional
+from typing import Dict, Iterable, List, Optional
 
 from PySide6.QtWidgets import (
     QFrame,
@@ -41,6 +41,7 @@ class RightSidebar(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._tch_session_active: bool = False
+        self._docker_service_labels: Dict[str, QLabel] = {}
         self.setStyleSheet(theme.PANEL_STYLE)
         self._setup_ui()
         self._wire_signals()
@@ -79,14 +80,12 @@ class RightSidebar(QFrame):
 
         self.btn_start_system = QPushButton("START SYSTEM")
         self.btn_start_system.setStyleSheet(theme.primary_button_style(theme.BUTTON_START))
-
-        lbl_status = QLabel(
-            "\n[OK] Sensing Layer\n[OK] Localization\n[OK] Navigation\n\nSTATUS: READY"
-        )
-        lbl_status.setStyleSheet(f"font-size: {theme.FONT_MD}px; line-height: 1.5;")
-
         layout.addWidget(self.btn_start_system)
-        layout.addWidget(lbl_status)
+
+        self._docker_service_container = QVBoxLayout()
+        self._docker_service_container.setContentsMargins(0, 8, 0, 0)
+        layout.addLayout(self._docker_service_container)
+
         layout.addStretch()
         return page
 
@@ -316,16 +315,95 @@ class RightSidebar(QFrame):
     def _toggle_start_system(self) -> None:
         starting = "START" in self.btn_start_system.text()
         if starting:
-            self.btn_start_system.setText("SHUTDOWN SYSTEM")
-            self.btn_start_system.setStyleSheet(
-                theme.primary_button_style(theme.ACCENT_RED)
-            )
+            self.set_system_starting()
         else:
-            self.btn_start_system.setText("START SYSTEM")
-            self.btn_start_system.setStyleSheet(
-                theme.primary_button_style(theme.BUTTON_START)
-            )
+            self.set_system_stopping()
         self.start_system_state_changed.emit(starting)
 
     def current_tab_index(self) -> int:
         return self.stacked_widget.currentIndex()
+
+    # ── Docker service status UI ─────────────────────────────
+
+    _PHASE_DISPLAY = {
+        "pending": ("--", theme.TEXT_MUTED),
+        "starting": ("STARTING", theme.ACCENT_YELLOW),
+        "settling": ("SETTLING", theme.ACCENT_YELLOW),
+        "ready": ("RUNNING", theme.ACCENT_GREEN),
+        "running": ("RUNNING", theme.ACCENT_GREEN),
+        "failed": ("FAILED", theme.ACCENT_RED),
+        "stopping": ("STOPPING", theme.ACCENT_YELLOW),
+        "stopped": ("STOPPED", theme.TEXT_MUTED),
+        "missing": ("MISSING", theme.ACCENT_RED),
+        "error": ("ERROR", theme.ACCENT_RED),
+    }
+
+    def init_docker_service_labels(self, keys: List[str]) -> None:
+        """Build one status row per service key (called once at startup)."""
+        for key in keys:
+            row = QHBoxLayout()
+            name_lbl = QLabel(key.replace("_", " ").title())
+            name_lbl.setStyleSheet(f"font-size: {theme.FONT_SM}px;")
+            status_lbl = QLabel("--")
+            status_lbl.setStyleSheet(
+                f"font-size: {theme.FONT_SM}px; color: {theme.TEXT_MUTED}; "
+                "font-weight: bold;"
+            )
+            status_lbl.setMinimumWidth(90)
+            row.addWidget(name_lbl)
+            row.addStretch()
+            row.addWidget(status_lbl)
+            self._docker_service_container.addLayout(row)
+            self._docker_service_labels[key] = status_lbl
+
+    def set_docker_step_status(self, _index: int, key: str, phase: str) -> None:
+        """Update the status label for a specific service key."""
+        lbl = self._docker_service_labels.get(key)
+        if lbl is None:
+            return
+        text, color = self._PHASE_DISPLAY.get(phase, (phase.upper(), theme.TEXT_MUTED))
+        lbl.setText(text)
+        lbl.setStyleSheet(
+            f"font-size: {theme.FONT_SM}px; color: {color}; font-weight: bold;"
+        )
+
+    def set_system_starting(self) -> None:
+        self.btn_start_system.setText("STARTING...")
+        self.btn_start_system.setEnabled(False)
+        self.btn_start_system.setStyleSheet(
+            theme.primary_button_style(theme.ACCENT_YELLOW)
+        )
+        for lbl in self._docker_service_labels.values():
+            lbl.setText("--")
+            lbl.setStyleSheet(
+                f"font-size: {theme.FONT_SM}px; color: {theme.TEXT_MUTED}; "
+                "font-weight: bold;"
+            )
+
+    def set_system_stopping(self) -> None:
+        self.btn_start_system.setText("STOPPING...")
+        self.btn_start_system.setEnabled(False)
+        self.btn_start_system.setStyleSheet(
+            theme.primary_button_style(theme.ACCENT_YELLOW)
+        )
+
+    def set_system_running(self) -> None:
+        self.btn_start_system.setText("SHUTDOWN SYSTEM")
+        self.btn_start_system.setEnabled(True)
+        self.btn_start_system.setStyleSheet(
+            theme.primary_button_style(theme.ACCENT_RED)
+        )
+
+    def set_system_stopped(self) -> None:
+        self.btn_start_system.setText("START SYSTEM")
+        self.btn_start_system.setEnabled(True)
+        self.btn_start_system.setStyleSheet(
+            theme.primary_button_style(theme.BUTTON_START)
+        )
+
+    def set_system_failed(self) -> None:
+        self.btn_start_system.setText("START SYSTEM")
+        self.btn_start_system.setEnabled(True)
+        self.btn_start_system.setStyleSheet(
+            theme.primary_button_style(theme.BUTTON_START)
+        )
