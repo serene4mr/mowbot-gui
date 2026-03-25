@@ -21,3 +21,16 @@ missions:
 # Teach-in validation (POLY: max distance between first and last point when saving)
 teach_in:
   poly_max_close_gap_m: 5.0
+
+
+docker_containers:
+  bringup_and_sensing:
+    container_name: 
+      - mowbot_uros_agent
+      - mowbot_bringup_and_sensing
+  localization:
+    container_name: mowbot_localization
+  navigation:
+    container_name: mowbot_navigation
+  app:
+    container_name: mowbot_app

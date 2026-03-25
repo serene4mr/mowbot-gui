@@ -1,0 +1,6 @@
+docker rm -f mowbot_uros_agent mowbot_bringup_and_sensing mowbot_localization mowbot_navigation mowbot_app
+docker compose -f test_compose/docker-compose.yml create
+
+
+docker start mowbot_uros_agent mowbot_navigation mowbot_bringup_and_sensing mowbot_app mowbot_localization
+docker stop mowbot_uros_agent mowbot_navigation mowbot_bringup_and_sensing mowbot_app mowbot_localization

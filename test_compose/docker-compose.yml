@@ -1,0 +1,123 @@
+services:
+  mowbot_uros_agent:
+    image: microros/micro-ros-agent:humble
+    container_name: mowbot_uros_agent
+    network_mode: host
+    stdin_open: true
+    tty: true
+    command:
+      - udp4
+      - --port
+      - "8888"
+
+  mowbot_bringup_and_sensing:
+    image: ghcr.io/serene4mr/mowbot:main-dev-cuda-latest
+    container_name: mowbot_bringup_and_sensing
+    # Keep the image's entrypoint (likely does ROS setup); only override command.
+    environment:
+      - ROS_DISTRO=${ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=0
+      - ROS_LOCALHOST_ONLY=0          # ensure DDS not restricted to loopback
+      # - RMW_IMPLEMENTATION=rmw_fastrtps_cpp  # uncomment if you want to force
+    network_mode: host
+    ipc: host                         # share host SHM for Fast DDS/Cyclone DDS
+    pid: host                         # optional but recommended with SHM
+    privileged: true
+    command:
+      - bash
+      - -lc
+      - |
+        # Escape $ so Compose doesn't interpolate at parse-time; container bash expands it.
+        source /opt/ros/$$ROS_DISTRO/setup.bash
+        # debug: show ROS env
+        env | grep -E 'ROS_|RMW' || true
+        # launch bringup and sensing
+        ros2 launch mowbot_launch mowbot.launch.py \
+          robot_id:=mowbot_001 \
+          robot_model:=mowbot_model_t2 \
+          sensor_model:=mowbot_sensor_kit_t2 \
+          data_path:=/workspaces/mowbot/src/mowbot_data \
+          launch_robot:=true launch_sensing:=true launch_sensing_driver:=true \
+          launch_localization:=false launch_nav2:=false launch_app:=false
+
+  mowbot_localization:
+    image: ghcr.io/serene4mr/mowbot:main-dev-cuda-latest
+    container_name: mowbot_localization
+    environment:
+      - ROS_DISTRO=${ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=0
+      - ROS_LOCALHOST_ONLY=0
+      # - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    network_mode: host
+    ipc: host
+    pid: host
+    privileged: true
+    command:
+      - bash
+      - -lc
+      - |
+        # Escape $ so Compose doesn't interpolate at parse-time; container bash expands it.
+        source /opt/ros/$$ROS_DISTRO/setup.bash
+        env | grep -E 'ROS_|RMW' || true
+        ros2 launch mowbot_launch mowbot.launch.py \
+          robot_id:=mowbot_001 \
+          robot_model:=mowbot_model_t2 \
+          sensor_model:=mowbot_sensor_kit_t2 \
+          data_path:=/workspaces/mowbot/src/mowbot_data \
+          launch_robot:=false launch_sensing:=false launch_sensing_driver:=false \
+          launch_localization:=true launch_nav2:=false launch_app:=false
+
+  mowbot_navigation:
+    image: ghcr.io/serene4mr/mowbot:main-dev-cuda-latest
+    container_name: mowbot_navigation
+    environment:
+      - ROS_DISTRO=${ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=0
+      - ROS_LOCALHOST_ONLY=0
+      # - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    network_mode: host
+    ipc: host
+    pid: host
+    privileged: true
+    command:
+      - bash
+      - -lc
+      - |
+        # Escape $ so Compose doesn't interpolate at parse-time; container bash expands it.
+        source /opt/ros/$$ROS_DISTRO/setup.bash
+        env | grep -E 'ROS_|RMW' || true
+        export ROS_DOMAIN_ID=0
+        ros2 launch mowbot_launch mowbot.launch.py \
+          robot_id:=mowbot_001 \
+          robot_model:=mowbot_model_t2 \
+          sensor_model:=mowbot_sensor_kit_t2 \
+          data_path:=/workspaces/mowbot/src/mowbot_data \
+          launch_robot:=false launch_sensing:=false launch_sensing_driver:=false \
+          launch_localization:=false launch_nav2:=true launch_app:=false
+
+  mowbot_app:
+    image: ghcr.io/serene4mr/mowbot:main-dev-cuda-latest
+    container_name: mowbot_app
+    environment:
+      - ROS_DISTRO=${ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=0
+      - ROS_LOCALHOST_ONLY=0
+      # - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    network_mode: host
+    ipc: host
+    pid: host
+    privileged: true
+    command:
+      - bash
+      - -lc
+      - |
+        # Escape $ so Compose doesn't interpolate at parse-time; container bash expands it.
+        source /opt/ros/$$ROS_DISTRO/setup.bash
+        env | grep -E 'ROS_|RMW' || true
+        ros2 launch mowbot_launch mowbot.launch.py \
+          robot_id:=mowbot_001 \
+          robot_model:=mowbot_model_t2 \
+          sensor_model:=mowbot_sensor_kit_t2 \
+          data_path:=/workspaces/mowbot/src/mowbot_data \
+          launch_robot:=false launch_sensing:=false launch_sensing_driver:=false \
+          launch_localization:=false launch_nav2:=false launch_app:=true

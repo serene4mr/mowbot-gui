@@ -1,0 +1,98 @@
+services:
+  mowbot_uros_agent:
+    image: microros/micro-ros-agent:humble
+    container_name: mowbot_uros_agent
+    network_mode: host
+    stdin_open: true
+    tty: true
+    command:
+      - udp4
+      - --port
+      - "8888"
+
+  mowbot_bringup_and_sensing:
+    image: ghcr.io/serene4mr/mowbot:main-dev-cuda-latest
+    container_name: mowbot_bringup_and_sensing
+    # Keep the image's entrypoint (likely does ROS setup); only override command.
+    environment:
+      - ROS_DISTRO=${ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=0
+      - ROS_LOCALHOST_ONLY=0          # ensure DDS not restricted to loopback
+      # - RMW_IMPLEMENTATION=rmw_fastrtps_cpp  # uncomment if you want to force
+    network_mode: host
+    ipc: host                         # share host SHM for Fast DDS/Cyclone DDS
+    pid: host                         # optional but recommended with SHM
+    privileged: true
+    command:
+      - bash
+      - -lc
+      - |
+        # Escape $ so Compose doesn't interpolate at parse-time; container bash expands it.
+        source /opt/ros/$$ROS_DISTRO/setup.bash
+        # debug: show ROS env
+        env | grep -E 'ROS_|RMW' || true
+        # publish test topic
+        ros2 topic pub -r 1 /test_mowbot_bringup_and_sensing std_msgs/msg/String "{data: 'mowbot_bringup_and_sensing up'}"
+
+  mowbot_localization:
+    image: ghcr.io/serene4mr/mowbot:main-dev-cuda-latest
+    container_name: mowbot_localization
+    environment:
+      - ROS_DISTRO=${ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=0
+      - ROS_LOCALHOST_ONLY=0
+      # - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    network_mode: host
+    ipc: host
+    pid: host
+    privileged: true
+    command:
+      - bash
+      - -lc
+      - |
+        # Escape $ so Compose doesn't interpolate at parse-time; container bash expands it.
+        source /opt/ros/$$ROS_DISTRO/setup.bash
+        env | grep -E 'ROS_|RMW' || true
+        ros2 topic pub -r 1 /test_mowbot_localization std_msgs/msg/String "{data: 'mowbot_localization up'}"
+
+  mowbot_navigation:
+    image: ghcr.io/serene4mr/mowbot:main-dev-cuda-latest
+    container_name: mowbot_navigation
+    environment:
+      - ROS_DISTRO=${ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=0
+      - ROS_LOCALHOST_ONLY=0
+      # - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    network_mode: host
+    ipc: host
+    pid: host
+    privileged: true
+    command:
+      - bash
+      - -lc
+      - |
+        # Escape $ so Compose doesn't interpolate at parse-time; container bash expands it.
+        source /opt/ros/$$ROS_DISTRO/setup.bash
+        env | grep -E 'ROS_|RMW' || true
+        ros2 topic pub -r 1 /test_mowbot_navigation std_msgs/msg/String "{data: 'mowbot_navigation up'}"
+
+  mowbot_app:
+    image: ghcr.io/serene4mr/mowbot:main-dev-cuda-latest
+    container_name: mowbot_app
+    environment:
+      - ROS_DISTRO=${ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=0
+      - ROS_LOCALHOST_ONLY=0
+      # - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    network_mode: host
+    ipc: host
+    pid: host
+    privileged: true
+    command:
+      - bash
+      - -lc
+      - |
+        # Escape $ so Compose doesn't interpolate at parse-time; container bash expands it.
+        source /opt/ros/$$ROS_DISTRO/setup.bash
+        env | grep -E 'ROS_|RMW' || true
+        ros2 topic pub -r 1 /test_mowbot_app std_msgs/msg/String "{data: 'mowbot_app up'}"

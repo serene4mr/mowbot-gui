@@ -46,6 +46,10 @@ class AppState(QObject):
     # VDA order publish result (PATH execute, etc.)
     order_dispatched = Signal(bool, str)  # success, order_id or error detail
 
+    # Docker container lifecycle (managed by DockerController)
+    docker_status_changed = Signal(str, str)  # key, status e.g. "running", "missing"
+    docker_error = Signal(str, str)  # key, message
+
     def __init__(
         self,
         parent: Optional[QObject] = None,

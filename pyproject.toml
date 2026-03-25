@@ -8,6 +8,7 @@ dependencies = [
     "paho-mqtt>=1.6",
     "PyYAML>=6.0",
     "termcolor>=2.0",
+    "docker>=7.0",
 ]
 
 [project.optional-dependencies]
