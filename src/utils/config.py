@@ -11,21 +11,20 @@ def deep_merge(base: Dict[Any, Any], override: Dict[Any, Any]) -> Dict[Any, Any]
             base[key] = value
     return base
 
-def load_config() -> Dict[str, Any]:
+def load_config(config_path: str | None = None) -> Dict[str, Any]:
     """
-    Loads and merges all three config layers:
-    1. config_default.yaml (Committed defaults)
-    2. config_local.yaml (User overrides)
-    3. Environment variables (Highest priority)
+    Loads and merges config layers (lowest → highest priority):
+    1. config/config_default.yaml   (committed defaults)
+    2. config/config_local.yaml     (gitignored user overrides)
+    3. --config / MOWBOT_GUI_CONFIG (external file override)
+    4. MOWBOT_* environment variables
     """
-    # Define paths relative to the backend root
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     default_path = os.path.join(base_dir, "config", "config_default.yaml")
     local_path = os.path.join(base_dir, "config", "config_local.yaml")
 
     # 1. Load Defaults
     if not os.path.exists(default_path):
-        # Create a basic default dict if the file is missing
         config = {
             "general": {"manufacturer": "MowbotTech", "serial_number": "mowbot_001"},
             "broker": {"host": "localhost", "port": 1883, "use_tls": False}
@@ -40,7 +39,17 @@ def load_config() -> Dict[str, Any]:
             local_config = yaml.safe_load(f) or {}
             config = deep_merge(config, local_config)
 
-    # 3. Environment Variable Overrides (highest priority)
+    # 3. External config file (--config flag > MOWBOT_GUI_CONFIG env var)
+    ext_path = config_path or os.getenv("MOWBOT_GUI_CONFIG")
+    if ext_path:
+        ext_path = os.path.expanduser(ext_path)
+        if not os.path.isfile(ext_path):
+            raise FileNotFoundError(f"Config file not found: {ext_path}")
+        with open(ext_path, "r") as f:
+            ext_config = yaml.safe_load(f) or {}
+            config = deep_merge(config, ext_config)
+
+    # 4. Environment Variable Overrides (highest priority)
     env_override = {
         "general": {
             "manufacturer": os.getenv("MOWBOT_MANUFACTURER"),

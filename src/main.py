@@ -1,4 +1,5 @@
 # src/main.py
+import argparse
 import os
 import signal
 import sys
@@ -30,8 +31,25 @@ from ui.main_window import MainWindow
 from utils.config import load_config
 from utils.logger import logger
 
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="MowBot GUI")
+    parser.add_argument(
+        "--config",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Path to a YAML config file. Merged on top of defaults "
+            "(overrides config_local.yaml). Also settable via "
+            "MOWBOT_GUI_CONFIG env var."
+        ),
+    )
+    return parser.parse_args()
+
+
 def main():
-    config = load_config()
+    args = _parse_args()
+    config = load_config(config_path=args.config)
 
     # Initialize the Qt Application
     app = QApplication(sys.argv)
