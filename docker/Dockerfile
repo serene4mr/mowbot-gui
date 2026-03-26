@@ -11,6 +11,8 @@ ENV DISPLAY=:0
 # 2. Install system dependencies for PySide6 and QtWebEngine
 # These are critical for the ESRI Maps (Chromium-based) to render correctly
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    sudo \
+    docker.io \
     git \
     libdouble-conversion3 \
     libevent-2.1-7 \
@@ -49,19 +51,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrandr2 \
     libxml2 \
     libxslt1.1 \
+    && mkdir -p /etc/sudoers.d \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 3. Set the working directory
-WORKDIR /app
+WORKDIR /mowbot-gui
 
-# 4. Install Python dependencies (Optimized for Caching)
-# We copy only the requirements file first
+# 4. Install Python dependencies (cached unless requirements.txt changes)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 5. Copy the rest of the application source code
-COPY . .
+# 5. Copy application code and assets
+COPY src/ ./src/
+COPY assets/ ./assets/
+COPY config/ ./config/
 
 # 6. Execute the application
-# Make sure your main entry point is at src/main.py
-CMD ["python", "src/main.py"]
+# CMD ["python", "src/main.py"]

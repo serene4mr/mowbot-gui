@@ -2,5 +2,6 @@ __pycache__
 *.pyc
 
 missions/*.json
+mowbot_data
 
 ref

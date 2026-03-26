@@ -1,0 +1,15 @@
+.git/
+.devcontainer/
+.pytest_cache/
+__pycache__/
+*.pyc
+ref/
+tests/
+mowbot_data/
+missions/*.json
+docker/
+test_compose/
+notes
+README.md
+.gitignore
+pyproject.toml

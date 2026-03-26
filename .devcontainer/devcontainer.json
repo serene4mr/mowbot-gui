@@ -23,6 +23,7 @@
         "-v", "/dev/shm:/dev/shm",
         "-v", "/tmp/.X11-unix:/tmp/.X11-unix",
         "-v", "/var/run/docker.sock:/var/run/docker.sock",
+        "-v", "${localEnv:HOME}/mowbot_data:${containerWorkspaceFolder}/mowbot_data",
         "-e", "DISPLAY"
     ],
     "customizations": {

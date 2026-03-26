@@ -11,3 +11,10 @@ Fix: add listener 1883 0.0.0.0 (or the specific LAN IP) so the broker listens on
 
 MOWBOT_MQTT_HOST=192.168.1.10 python src/main.py
 MOWBOT_MQTT_HOST=172.17.10.1 python src/main.py
+
+
+python src/main.py --config /path/to/gui_config.yaml
+# or
+MOWBOT_GUI_CONFIG=/path/to/gui_config.yaml python src/main.py
+
+DISPLAY=:0 MOWBOT_GUI_CONFIG=/workspaces/mowbot-gui/mowbot_data/gui/config.yaml python src/main.py
