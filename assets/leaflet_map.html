@@ -16,7 +16,8 @@
     <div id="map"></div>
     <script>
         const TRACK_ZOOM = 19;
-        const HEADING_OFFSET_DEG = 180;
+        // ENU → CSS rotation: ENU is CCW-from-East; CSS rotate() is CW-from-North.
+        // cssAngle = 90 - enuAngle
         const MOWBOT_ARROW_SVG =
             '<svg width="30" height="30" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 5 L90 90 L50 70 L10 90 L50 5 Z" fill="#00ff88" stroke="#ffffff" stroke-width="2"/></svg>';
 
@@ -39,7 +40,7 @@
 
         var robotMarker = null;
         function updateRobotPosition(lat, lng, headingDeg) {
-            const markerHeading = (headingDeg || 0) + HEADING_OFFSET_DEG;
+            const markerHeading = 90 - (headingDeg || 0);
             if (!robotMarker) {
                 const icon = L.divIcon({
                     className: 'mowbot-arrow-icon',
