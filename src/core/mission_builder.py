@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 from vda5050.models.order import Edge, Node, NodePosition, Order
 
-Pair = Tuple[float, float]  # (lat, lon)
+Waypoint = Union[Tuple[float, float, float], Tuple[float, float]]  # (lat, lon[, theta_deg])
 
 
 def build_path_order(
-    coordinates: List[Pair],
+    coordinates: List[Waypoint],
     *,
     manufacturer: str,
     serial_number: str,
@@ -20,7 +21,8 @@ def build_path_order(
 ) -> Order:
     """Create a VDA5050 Order from a PATH: open polyline, no closing edge.
 
-    Coordinates are (lat, lon); NodePosition uses x=lon, y=lat to match AGV state.
+    Coordinates are (lat, lon, theta_deg); NodePosition uses x=lon, y=lat.
+    VDA5050 theta is radians; missing theta defaults to 0.
     """
     if len(coordinates) < 2:
         raise ValueError("PATH needs at least 2 waypoints")
@@ -31,7 +33,9 @@ def build_path_order(
     nodes: List[Node] = []
     edges: List[Edge] = []
 
-    for i, (lat, lon) in enumerate(coordinates):
+    for i, coord in enumerate(coordinates):
+        lat, lon = coord[0], coord[1]
+        theta_deg = coord[2] if len(coord) >= 3 else 0.0
         seq = i * 2
         nodes.append(
             Node(
@@ -41,7 +45,7 @@ def build_path_order(
                 nodePosition=NodePosition(
                     x=float(lon),
                     y=float(lat),
-                    theta=0.0,
+                    theta=math.radians(theta_deg),
                     mapId=map_id,
                 ),
                 actions=[],

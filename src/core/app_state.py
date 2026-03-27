@@ -70,11 +70,12 @@ class AppState(QObject):
         # Last robot fix: x=lon, y=lat (matches VDA / map_view convention)
         self._last_lon: float = 0.0
         self._last_lat: float = 0.0
+        self._last_theta_deg: float = 0.0
         self._has_position: bool = False
 
-        # Teach-in session
+        # Teach-in session (lat, lon, theta_deg from last telemetry when logged)
         self._tch_mode: str = "PATH"
-        self._tch_points: List[Tuple[float, float]] = []
+        self._tch_points: List[Tuple[float, float, float]] = []
         self._tch_auto_record: bool = False
         # POLY save: reject if first/last points farther than this (meters); <=0 disables
         try:
@@ -105,7 +106,7 @@ class AppState(QObject):
         return self._tch_mode
 
     @property
-    def tch_points(self) -> List[Tuple[float, float]]:
+    def tch_points(self) -> List[Tuple[float, float, float]]:
         return list(self._tch_points)
 
     @property
@@ -135,6 +136,7 @@ class AppState(QObject):
         # Cache for teach-in logging (x = longitude, y = latitude)
         self._last_lon = float(x)
         self._last_lat = float(y)
+        self._last_theta_deg = float(theta_deg)
         self._has_position = True
         self.position_changed.emit(x, y, theta_deg, speed_mps)
 
@@ -182,7 +184,7 @@ class AppState(QObject):
             self.tch_error.emit("No position yet. Wait for GPS / localization.")
             return False
         lat, lon = self._last_lat, self._last_lon
-        self._tch_points.append((lat, lon))
+        self._tch_points.append((lat, lon, self._last_theta_deg))
         n = len(self._tch_points)
         self.tch_point_added.emit(lat, lon, n)
         self._emit_tch_stats()
@@ -214,8 +216,8 @@ class AppState(QObject):
             and self._poly_max_close_gap_m > 0
             and len(self._tch_points) >= 3
         ):
-            first = self._tch_points[0]
-            last = self._tch_points[-1]
+            first = self._tch_points[0][:2]
+            last = self._tch_points[-1][:2]
             gap_m = haversine_distance_m(first, last)
             if gap_m > self._poly_max_close_gap_m:
                 return (
@@ -236,7 +238,10 @@ class AppState(QObject):
         os.makedirs(missions_dir, exist_ok=True)
         path = os.path.join(missions_dir, filename)
 
-        coords = [[lat, lon] for lat, lon in self._tch_points]
+        coords = [
+            [lat, lon, round(theta, 4)]
+            for lat, lon, theta in self._tch_points
+        ]
         payload = {
             "type": self._tch_mode,
             "count": len(coords),
@@ -260,15 +265,15 @@ class AppState(QObject):
         """Distance from current fix to last logged waypoint; None if no fix or no points."""
         if not self._has_position or not self._tch_points:
             return None
-        last_lat, last_lon = self._tch_points[-1]
+        last = self._tch_points[-1]
         return haversine_distance_m(
-            (last_lat, last_lon), (self._last_lat, self._last_lon)
+            (last[0], last[1]), (self._last_lat, self._last_lon)
         )
 
     def _emit_tch_stats(self) -> None:
         n = len(self._tch_points)
         if self._tch_mode == "POLY" and n >= 3:
-            area = polygon_area_m2(self._tch_points)
+            area = polygon_area_m2([(p[0], p[1]) for p in self._tch_points])
         else:
             area = -1.0
         self.tch_stats_changed.emit(n, area)

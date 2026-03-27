@@ -109,8 +109,11 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _parse_mission_json_file(
         path: str,
-    ) -> Tuple[Optional[str], List[Tuple[float, float]], Optional[str]]:
-        """Returns (type, coordinates as (lat,lon), error_message)."""
+    ) -> Tuple[Optional[str], List[Tuple[float, float, float]], Optional[str]]:
+        """Returns (type, coordinates as (lat, lon, theta_deg), error_message).
+
+        Older files with only [lat, lon] get theta_deg = 0.0.
+        """
         try:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
@@ -125,16 +128,17 @@ class MainWindow(QMainWindow):
         if not isinstance(raw_coords, list) or len(raw_coords) == 0:
             return None, [], "Missing or empty 'coordinates' array."
 
-        out: List[Tuple[float, float]] = []
+        out: List[Tuple[float, float, float]] = []
         for i, pair in enumerate(raw_coords):
             if not isinstance(pair, (list, tuple)) or len(pair) < 2:
                 return None, [], f"Invalid coordinate pair at index {i}."
             try:
                 lat = float(pair[0])
                 lon = float(pair[1])
+                theta = float(pair[2]) if len(pair) >= 3 else 0.0
             except (TypeError, ValueError):
                 return None, [], f"Non-numeric coordinate at index {i}."
-            out.append((lat, lon))
+            out.append((lat, lon, theta))
 
         if typ == "PATH" and len(out) < 2:
             return None, [], "PATH missions need at least 2 coordinates."
@@ -401,7 +405,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Execute mission", str(exc))
             return
 
-        self.map_view.load_mission_preview(typ, coords)
+        latlon = [(c[0], c[1]) for c in coords]
+        self.map_view.load_mission_preview(typ, latlon)
         self._mission_preview_filename = name
 
         self._vda.send_path_order(order)
@@ -439,7 +444,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Load mission", err)
             return
         assert typ is not None
-        self.map_view.load_mission_preview(typ, coords)
+        latlon = [(c[0], c[1]) for c in coords]
+        self.map_view.load_mission_preview(typ, latlon)
         self._mission_preview_filename = name
         logger.info(f"Mission preview on map: {name} ({typ}, {len(coords)} pts)")
 
