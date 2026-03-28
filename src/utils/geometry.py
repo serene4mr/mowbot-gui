@@ -10,6 +10,28 @@ Pair = Tuple[float, float]  # (lat_deg, lon_deg)
 _EARTH_RADIUS_M = 6_371_000.0
 
 
+def latlon_to_xy_m(lat_deg: float, lon_deg: float, ref: Pair) -> Tuple[float, float]:
+    """Equirectangular meters east/north from ref (same model as polygon_area_m2)."""
+    ref_lat, ref_lon = ref
+    cos_ref = math.cos(math.radians(ref_lat))
+    if cos_ref < 1e-6:
+        cos_ref = 1e-6
+    x = math.radians(lon_deg - ref_lon) * _EARTH_RADIUS_M * cos_ref
+    y = math.radians(lat_deg - ref_lat) * _EARTH_RADIUS_M
+    return (x, y)
+
+
+def xy_m_to_latlon(x_m: float, y_m: float, ref: Pair) -> Pair:
+    """Inverse of latlon_to_xy_m."""
+    ref_lat, ref_lon = ref
+    cos_ref = math.cos(math.radians(ref_lat))
+    if cos_ref < 1e-6:
+        cos_ref = 1e-6
+    lat = ref_lat + math.degrees(y_m / _EARTH_RADIUS_M)
+    lon = ref_lon + math.degrees(x_m / (_EARTH_RADIUS_M * cos_ref))
+    return (lat, lon)
+
+
 def haversine_distance_m(a: Pair, b: Pair) -> float:
     """Great-circle distance between two WGS84 points in meters."""
     lat1, lon1 = map(math.radians, a)

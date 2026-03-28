@@ -27,6 +27,12 @@ teach_in:
   poly_min_area_m2: 0.0
   poly_reject_self_intersection: true
 
+# POLY → coverage path (boustrophedon sweep; preview + execute)
+coverage:
+  mow_width_m: 0.5
+  overlap_pct: 10.0
+  sweep_angle_deg: null  # null = align passes perpendicular to longest boundary edge
+  max_waypoints: 2000
 
 docker_containers:
   bringup_and_sensing:

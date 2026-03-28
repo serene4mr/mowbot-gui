@@ -24,6 +24,7 @@ from core.app_state import AppState
 from core.docker_controller import DockerController
 from core.mission_builder import build_path_order
 from core.vda_controller import VDAController
+from utils.coverage import compute_coverage_path
 from ui.components.map_view import MapView
 from ui.components.top_bar import TopBar
 from ui.components.left_hud import LeftHUD
@@ -122,6 +123,34 @@ class MainWindow(QMainWindow):
         if isinstance(raw, bool):
             return raw
         return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _coverage_params(self) -> dict:
+        c = self.config.get("coverage") or {}
+        sweep_raw = c.get("sweep_angle_deg")
+        sweep_angle_deg: Optional[float] = None
+        if sweep_raw is not None:
+            try:
+                sweep_angle_deg = float(sweep_raw)
+            except (TypeError, ValueError):
+                sweep_angle_deg = None
+        try:
+            mow_width_m = float(c.get("mow_width_m", 0.5))
+        except (TypeError, ValueError):
+            mow_width_m = 0.5
+        try:
+            overlap_pct = float(c.get("overlap_pct", 10.0))
+        except (TypeError, ValueError):
+            overlap_pct = 10.0
+        try:
+            max_waypoints = int(c.get("max_waypoints", 2000))
+        except (TypeError, ValueError):
+            max_waypoints = 2000
+        return {
+            "mow_width_m": mow_width_m,
+            "overlap_pct": overlap_pct,
+            "sweep_angle_deg": sweep_angle_deg,
+            "max_waypoints": max_waypoints,
+        }
 
     @staticmethod
     def _parse_mission_json_file(
@@ -400,21 +429,31 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Execute mission", err)
             return
         assert typ is not None
-        if typ != "PATH":
-            QMessageBox.information(
-                self,
-                "Execute mission",
-                "POLY missions cannot be executed yet. Save or convert to a PATH mission, "
-                "or use Load on map for preview only.",
+        self.map_view.clear_mission_preview()
+        self._app_state.reset_mission_progress_ui()
+        latlon = [(c[0], c[1]) for c in coords]
+        exec_coords = coords
+        if typ == "POLY":
+            path_wps, cerr = compute_coverage_path(
+                latlon,
+                robot_position=self._app_state.get_robot_latlon(),
+                **self._coverage_params(),
             )
-            return
+            if cerr:
+                QMessageBox.warning(self, "Execute mission", cerr)
+                return
+            exec_coords = [(lat, lon, 0.0) for lat, lon in path_wps]
+            self.map_view.load_poly_coverage_preview(latlon, path_wps)
+        else:
+            self.map_view.load_mission_preview(typ, latlon)
+
         g = self.config.get("general") or {}
         manufacturer = str(g.get("manufacturer", "MowbotTech"))
         serial_number = str(g.get("serial_number", "mowbot_001"))
         map_id = str(g.get("map_id") or "mowbot_field")
         try:
             order = build_path_order(
-                coords,
+                exec_coords,
                 manufacturer=manufacturer,
                 serial_number=serial_number,
                 map_id=map_id,
@@ -423,14 +462,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Execute mission", str(exc))
             return
 
-        latlon = [(c[0], c[1]) for c in coords]
-        self.map_view.load_mission_preview(typ, latlon)
         self._mission_preview_filename = name
 
         self._vda.send_path_order(order)
         logger.info(
             f"Execute mission: queued VDA order {order.orderId} from {name} "
-            f"({len(coords)} waypoints, mapId={map_id})"
+            f"({len(exec_coords)} waypoints, mapId={map_id})"
         )
 
     def _on_order_dispatched(self, ok: bool, detail: str, total_nodes: int) -> None:
@@ -460,8 +497,15 @@ class MainWindow(QMainWindow):
             self.map_view.clear_mission_progress_highlight()
         elif st == "completed":
             self.map_view.update_mission_progress(last_idx, True)
+            QTimer.singleShot(3000, self._clear_finished_mission_overlay)
         else:
             self.map_view.update_mission_progress(last_idx, False)
+
+    def _clear_finished_mission_overlay(self) -> None:
+        """Remove mission markers/overlay after completion (called by timer)."""
+        self.map_view.clear_mission_preview()
+        self._mission_preview_filename = None
+        logger.info("Cleared mission overlay after completion")
 
     def _on_load_mission_preview(self) -> None:
         name = self.sidebar_panel.current_mission_filename()
@@ -482,9 +526,25 @@ class MainWindow(QMainWindow):
             return
         assert typ is not None
         latlon = [(c[0], c[1]) for c in coords]
-        self.map_view.load_mission_preview(typ, latlon)
+        self._app_state.reset_mission_progress_ui()
+        if typ == "POLY":
+            path_wps, cerr = compute_coverage_path(
+                latlon,
+                robot_position=self._app_state.get_robot_latlon(),
+                **self._coverage_params(),
+            )
+            if cerr:
+                QMessageBox.warning(self, "Load mission", cerr)
+                return
+            self.map_view.load_poly_coverage_preview(latlon, path_wps)
+            logger.info(
+                f"Mission preview on map: {name} (POLY, {len(coords)} boundary pts, "
+                f"{len(path_wps)} coverage waypoints)"
+            )
+        else:
+            self.map_view.load_mission_preview(typ, latlon)
+            logger.info(f"Mission preview on map: {name} ({typ}, {len(coords)} pts)")
         self._mission_preview_filename = name
-        logger.info(f"Mission preview on map: {name} ({typ}, {len(coords)} pts)")
 
     def _on_delete_mission(self) -> None:
         name = self.sidebar_panel.current_mission_filename()

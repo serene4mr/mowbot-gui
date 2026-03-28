@@ -138,9 +138,12 @@
         var missionPreviewMarkers = [];
         var missionPreviewPolyline = null;
         var missionPreviewPolygon = null;
+        var missionPreviewCoveragePolyline = null;
         const MISSION_PREVIEW_COLOR = '#FF9800';
+        const MISSION_COVERAGE_LINE = '#42A5F5';
         const MISSION_DONE_COLOR = '#00E676';
         const MISSION_CURRENT_COLOR = '#00B0FF';
+        const MISSION_COVERAGE_START = '#00E676';
 
         function clearMissionPreview() {
             missionPreviewMarkers.forEach(function (m) {
@@ -154,6 +157,10 @@
             if (missionPreviewPolygon) {
                 missionPreviewGroup.removeLayer(missionPreviewPolygon);
                 missionPreviewPolygon = null;
+            }
+            if (missionPreviewCoveragePolyline) {
+                missionPreviewGroup.removeLayer(missionPreviewCoveragePolyline);
+                missionPreviewCoveragePolyline = null;
             }
         }
 
@@ -189,6 +196,52 @@
             }
             try {
                 const b = L.latLngBounds(ll);
+                if (b.isValid()) {
+                    map.fitBounds(b.pad(0.12));
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        /** POLY region fill + coverage path; progress markers follow path order. */
+        function setPolyCoveragePreview(polyCoords, pathCoords) {
+            clearMissionPreview();
+            if (!polyCoords || polyCoords.length < 3) return;
+            var pll = polyCoords.map(function (c) { return L.latLng(c[0], c[1]); });
+            missionPreviewPolygon = L.polygon(pll, {
+                color: MISSION_PREVIEW_COLOR,
+                weight: 3,
+                fillColor: MISSION_PREVIEW_COLOR,
+                fillOpacity: 0.18
+            }).addTo(missionPreviewGroup);
+            if (pathCoords && pathCoords.length >= 2) {
+                var pathLatLngs = pathCoords.map(function (c) { return L.latLng(c[0], c[1]); });
+                missionPreviewCoveragePolyline = L.polyline(pathLatLngs, {
+                    color: MISSION_COVERAGE_LINE,
+                    weight: 3,
+                    dashArray: '8 6',
+                    opacity: 0.92
+                }).addTo(missionPreviewGroup);
+                pathCoords.forEach(function (c, i) {
+                    var lat = c[0], lng = c[1];
+                    var isStart = (i === 0);
+                    var m = L.circleMarker([lat, lng], {
+                        radius: isStart ? 7 : 5,
+                        color: isStart ? MISSION_COVERAGE_START : MISSION_PREVIEW_COLOR,
+                        weight: 2,
+                        fillColor: isStart ? MISSION_COVERAGE_START : MISSION_PREVIEW_COLOR,
+                        fillOpacity: 0.88
+                    }).addTo(missionPreviewGroup);
+                    missionPreviewMarkers.push(m);
+                });
+            }
+            try {
+                var all = pll.slice();
+                if (pathCoords && pathCoords.length) {
+                    pathCoords.forEach(function (c) {
+                        all.push(L.latLng(c[0], c[1]));
+                    });
+                }
+                var b = L.latLngBounds(all);
                 if (b.isValid()) {
                     map.fitBounds(b.pad(0.12));
                 }

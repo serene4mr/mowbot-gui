@@ -26,6 +26,9 @@ class MapView(QWebEngineView):
         super().__init__(parent)
         self._teach_recording_poly: bool = False
         self._last_mission_preview: Optional[Tuple[str, List[Tuple[float, float]]]] = None
+        self._last_poly_coverage: Optional[
+            Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]
+        ] = None
         settings = self.settings()
         settings.setAttribute(
             QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True
@@ -79,6 +82,7 @@ class MapView(QWebEngineView):
     def _on_load_finished(self, ok: bool) -> None:
         if ok:
             self._push_teach_recording_poly_js()
+            self._push_poly_coverage_js()
             self._push_mission_preview_js()
 
     def set_teach_recording_poly_mode(self, is_poly: bool) -> None:
@@ -97,6 +101,7 @@ class MapView(QWebEngineView):
     def clear_mission_preview(self) -> None:
         """Remove RUN-tab mission overlay from the map."""
         self._last_mission_preview = None
+        self._last_poly_coverage = None
         self.page().runJavaScript(
             "if (typeof clearMissionPreview === 'function') { clearMissionPreview(); }"
         )
@@ -121,10 +126,35 @@ class MapView(QWebEngineView):
     ) -> None:
         """Draw saved PATH/POLY on map (orange); replaces any previous preview."""
         mt = str(mission_type).upper()
+        self._last_poly_coverage = None
         self._last_mission_preview = (mt, list(coordinates))
         self._push_mission_preview_js()
 
+    def load_poly_coverage_preview(
+        self,
+        polygon_latlon: List[Tuple[float, float]],
+        path_latlon: List[Tuple[float, float]],
+    ) -> None:
+        """POLY boundary fill plus coverage path markers (progress uses path waypoints)."""
+        self._last_mission_preview = None
+        self._last_poly_coverage = (list(polygon_latlon), list(path_latlon))
+        self._push_poly_coverage_js()
+
+    def _push_poly_coverage_js(self) -> None:
+        if self._last_poly_coverage is None:
+            return
+        poly, path = self._last_poly_coverage
+        poly_js = json.dumps([[lat, lon] for lat, lon in poly])
+        path_js = json.dumps([[lat, lon] for lat, lon in path])
+        js = (
+            "if (typeof setPolyCoveragePreview === 'function') "
+            f"{{ setPolyCoveragePreview({poly_js}, {path_js}); }}"
+        )
+        self.page().runJavaScript(js)
+
     def _push_mission_preview_js(self) -> None:
+        if self._last_poly_coverage is not None:
+            return
         if self._last_mission_preview is None:
             return
         typ, coords = self._last_mission_preview

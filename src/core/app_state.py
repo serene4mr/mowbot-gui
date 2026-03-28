@@ -146,6 +146,12 @@ class AppState(QObject):
     def has_position_fix(self) -> bool:
         return self._has_position
 
+    def get_robot_latlon(self) -> Optional[Tuple[float, float]]:
+        """Current fix as (lat, lon) when available; ``x``/``y`` telemetry is lon/lat."""
+        if not self._has_position:
+            return None
+        return (self._last_lat, self._last_lon)
+
     # ── Mutators (emit signals only on actual change) ─────────
 
     def set_mqtt(self, connected: bool) -> None:

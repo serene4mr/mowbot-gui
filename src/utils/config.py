@@ -74,6 +74,14 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
                 os.getenv("MOWBOT_TEACH_POLY_REJECT_SELF_INTERSECTION")
             ),
         },
+        "coverage": {
+            "mow_width_m": _to_float_or_none(os.getenv("MOWBOT_COVERAGE_MOW_WIDTH_M")),
+            "overlap_pct": _to_float_or_none(os.getenv("MOWBOT_COVERAGE_OVERLAP_PCT")),
+            "sweep_angle_deg": _to_float_or_none(
+                os.getenv("MOWBOT_COVERAGE_SWEEP_ANGLE_DEG")
+            ),
+            "max_waypoints": _to_int_or_none(os.getenv("MOWBOT_COVERAGE_MAX_WAYPOINTS")),
+        },
     }
     config = deep_merge(config, _drop_nones_recursive(env_override))
 
