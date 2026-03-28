@@ -17,6 +17,7 @@ broker:
 # Teach-in missions (JSON) written under project root by default
 missions:
   directory: "missions"
+  max_start_distance_m: 50.0  # warn if robot is farther than this from 1st waypoint; 0 disables
 
 # Teach-in validation (POLY)
 # - poly_max_close_gap_m: first and last waypoint must be within this distance (m) to close the loop; <=0 disables

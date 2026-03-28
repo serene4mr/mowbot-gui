@@ -25,6 +25,7 @@ from core.docker_controller import DockerController
 from core.mission_builder import build_path_order
 from core.vda_controller import VDAController
 from utils.coverage import compute_coverage_path
+from utils.geometry import haversine_distance_m
 from ui.components.map_view import MapView
 from ui.components.top_bar import TopBar
 from ui.components.left_hud import LeftHUD
@@ -73,6 +74,11 @@ class MainWindow(QMainWindow):
         self._auto_record_timer = QTimer(self)
         self._auto_record_timer.setInterval(_AUTO_RECORD_INTERVAL_MS)
         self._auto_record_timer.timeout.connect(self._on_auto_record_tick)
+
+        self._mission_clear_timer = QTimer(self)
+        self._mission_clear_timer.setSingleShot(True)
+        self._mission_clear_timer.setInterval(3000)
+        self._mission_clear_timer.timeout.connect(self._clear_finished_mission_overlay)
 
         self._connect_state()
         self._connect_sidebar()
@@ -151,6 +157,15 @@ class MainWindow(QMainWindow):
             "sweep_angle_deg": sweep_angle_deg,
             "max_waypoints": max_waypoints,
         }
+
+    def _max_start_distance_m(self) -> float:
+        m = self.config.get("missions") or {}
+        raw = m.get("max_start_distance_m", 50.0)
+        try:
+            v = float(raw)
+            return v if v > 0 else 0.0
+        except (TypeError, ValueError):
+            return 50.0
 
     @staticmethod
     def _parse_mission_json_file(
@@ -429,6 +444,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Execute mission", err)
             return
         assert typ is not None
+        self._mission_clear_timer.stop()
         self.map_view.clear_mission_preview()
         self._app_state.reset_mission_progress_ui()
         latlon = [(c[0], c[1]) for c in coords]
@@ -461,6 +477,26 @@ class MainWindow(QMainWindow):
         except ValueError as exc:
             QMessageBox.warning(self, "Execute mission", str(exc))
             return
+
+        max_dist = self._max_start_distance_m()
+        if max_dist > 0 and exec_coords:
+            robot_pos = self._app_state.get_robot_latlon()
+            if robot_pos is not None:
+                first_wp = (exec_coords[0][0], exec_coords[0][1])
+                dist = haversine_distance_m(robot_pos, first_wp)
+                if dist > max_dist:
+                    reply = QMessageBox.question(
+                        self,
+                        "Execute mission",
+                        f"Robot is {dist:.0f} m from the first waypoint "
+                        f"(limit {max_dist:.0f} m).\n\n"
+                        "Start the mission anyway?",
+                        QMessageBox.StandardButton.Yes
+                        | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No,
+                    )
+                    if reply != QMessageBox.StandardButton.Yes:
+                        return
 
         self._mission_preview_filename = name
 
@@ -497,7 +533,7 @@ class MainWindow(QMainWindow):
             self.map_view.clear_mission_progress_highlight()
         elif st == "completed":
             self.map_view.update_mission_progress(last_idx, True)
-            QTimer.singleShot(3000, self._clear_finished_mission_overlay)
+            self._mission_clear_timer.start()
         else:
             self.map_view.update_mission_progress(last_idx, False)
 
