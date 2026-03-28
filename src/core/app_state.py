@@ -44,7 +44,12 @@ class AppState(QObject):
     tch_session_saved = Signal(str)  # filename only (path_* / poly_* + datetime + .json)
 
     # VDA order publish result (PATH execute, etc.)
-    order_dispatched = Signal(bool, str)  # success, order_id or error detail
+    order_dispatched = Signal(bool, str, int)  # success, order_id or error detail, total_nodes
+
+    # Mission execution progress (from VDA5050 State on the tracked order)
+    mission_progress_changed = Signal(
+        str, str, int, int, int
+    )  # status, order_id, completed, total, last_node_index_for_map (-1 = no highlight)
 
     # Docker container lifecycle (managed by DockerController)
     docker_status_changed = Signal(str, str)  # key, status e.g. "running", "missing"
@@ -83,6 +88,10 @@ class AppState(QObject):
         except (TypeError, ValueError):
             self._poly_max_close_gap_m = 5.0
 
+        # PATH execute: track one active order until completed or cleared
+        self._active_order_id: str = ""
+        self._total_nodes: int = 0
+
     # ── Read-only properties ──────────────────────────────────
 
     @property
@@ -112,6 +121,10 @@ class AppState(QObject):
     @property
     def tch_auto_record(self) -> bool:
         return self._tch_auto_record
+
+    @property
+    def active_order_id(self) -> str:
+        return self._active_order_id
 
     @property
     def has_position_fix(self) -> bool:
@@ -159,6 +172,77 @@ class AppState(QObject):
 
     def set_robot_id(self, robot_id: str) -> None:
         self.robot_id_changed.emit(robot_id)
+
+    # ── VDA mission progress (PATH execute) ───────────────────
+
+    def set_active_order(self, order_id: str, total_nodes: int) -> None:
+        """Call after a PATH order is successfully dispatched."""
+        self._active_order_id = (order_id or "").strip()
+        try:
+            self._total_nodes = max(0, int(total_nodes))
+        except (TypeError, ValueError):
+            self._total_nodes = 0
+        if self._active_order_id and self._total_nodes > 0:
+            self.mission_progress_changed.emit(
+                "executing", self._active_order_id, 0, self._total_nodes, -1
+            )
+
+    def _clear_tracked_order(self) -> None:
+        self._active_order_id = ""
+        self._total_nodes = 0
+
+    def _emit_mission_completed_and_clear(self) -> None:
+        oid = self._active_order_id
+        total = self._total_nodes
+        if not oid or total <= 0:
+            return
+        last_idx = max(0, total - 1)
+        self._clear_tracked_order()
+        self.mission_progress_changed.emit("completed", oid, total, total, last_idx)
+
+    def set_mission_progress(
+        self,
+        state_order_id: str,
+        _order_update_id: int,
+        _last_node_id: str,
+        last_node_seq: int,
+        nodes_remaining: int,
+        driving: bool,
+    ) -> None:
+        """Update from VDA5050 State; only affects UI when an order is tracked."""
+        if not self._active_order_id:
+            return
+        total = self._total_nodes
+        if total <= 0:
+            return
+
+        oid = (state_order_id or "").strip()
+        if oid and oid != self._active_order_id:
+            return
+
+        if oid and oid == self._active_order_id:
+            last_idx = max(0, min(total - 1, last_node_seq // 2))
+            completed = min(total, max(0, total - nodes_remaining))
+            if (
+                nodes_remaining == 0
+                and not driving
+                and (completed >= total or last_idx >= total - 1)
+            ):
+                self._emit_mission_completed_and_clear()
+                return
+            self.mission_progress_changed.emit(
+                "executing", oid, completed, total, last_idx
+            )
+            return
+
+        # Empty order id from robot: often idle after mission
+        if not oid and nodes_remaining == 0 and not driving:
+            self._emit_mission_completed_and_clear()
+
+    def reset_mission_progress_ui(self) -> None:
+        """Clear sidebar/map mission progress (e.g. new preview without execute)."""
+        self._clear_tracked_order()
+        self.mission_progress_changed.emit("idle", "", 0, 0, -1)
 
     # ── Teach-in ──────────────────────────────────────────────
 

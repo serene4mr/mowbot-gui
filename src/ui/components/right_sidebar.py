@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QMessageBox,
     QGraphicsOpacityEffect,
+    QProgressBar,
 )
 from PySide6.QtCore import Signal
 
@@ -190,6 +191,42 @@ class RightSidebar(QFrame):
         layout.addWidget(self.btn_delete_mission)
 
         layout.addWidget(self.btn_execute)
+
+        self.lbl_mission_heading = QLabel("MISSION PROGRESS")
+        self.lbl_mission_heading.setStyleSheet(
+            f"color: {theme.TEXT_MUTED}; font-size: {theme.FONT_XS}px; "
+            "font-weight: bold; margin-top: 12px;"
+        )
+        self.lbl_mission_status = QLabel("IDLE")
+        self.lbl_mission_status.setStyleSheet(
+            f"font-size: {theme.FONT_MD}px; font-weight: bold; "
+            f"color: {theme.TEXT_MUTED};"
+        )
+        self.lbl_mission_order = QLabel("--")
+        self.lbl_mission_order.setWordWrap(True)
+        self.lbl_mission_order.setStyleSheet(
+            f"color: {theme.TEXT_MUTED}; font-size: {theme.FONT_XS}px;"
+        )
+        self.progress_mission = QProgressBar()
+        self.progress_mission.setRange(0, 100)
+        self.progress_mission.setValue(0)
+        self.progress_mission.setTextVisible(True)
+        self.progress_mission.setFormat("%p%")
+        self.progress_mission.setStyleSheet(
+            f"QProgressBar {{ border: 1px solid #444; border-radius: 4px; "
+            f"text-align: center; color: {theme.TEXT_WHITE}; height: 22px; }}"
+            f"QProgressBar::chunk {{ background-color: {theme.ACCENT_GREEN}; }}"
+        )
+        self.lbl_mission_fraction = QLabel("")
+        self.lbl_mission_fraction.setStyleSheet(
+            f"font-size: {theme.FONT_SM}px; color: {theme.TEXT_PRIMARY};"
+        )
+        layout.addWidget(self.lbl_mission_heading)
+        layout.addWidget(self.lbl_mission_status)
+        layout.addWidget(self.lbl_mission_order)
+        layout.addWidget(self.progress_mission)
+        layout.addWidget(self.lbl_mission_fraction)
+
         layout.addStretch()
         return page
 
@@ -296,6 +333,56 @@ class RightSidebar(QFrame):
         else:
             self.btn_auto.setText("AUTO-RECORD (OFF)")
             self.btn_auto.setStyleSheet(theme.action_button_style())
+
+    def update_mission_progress(
+        self,
+        status: str,
+        order_id: str,
+        completed: int,
+        total: int,
+        _last_node_index: int,
+    ) -> None:
+        """Update RUN tab mission progress (idle / executing / completed)."""
+        st = (status or "idle").strip().lower()
+        if st == "idle":
+            self.lbl_mission_status.setText("IDLE")
+            self.lbl_mission_status.setStyleSheet(
+                f"font-size: {theme.FONT_MD}px; font-weight: bold; "
+                f"color: {theme.TEXT_MUTED};"
+            )
+            self.lbl_mission_order.setText("--")
+            self.progress_mission.setValue(0)
+            self.lbl_mission_fraction.setText("")
+            return
+
+        oid = (order_id or "").strip() or "--"
+        self.lbl_mission_order.setText(f"Order: {oid}")
+
+        if st == "completed":
+            self.lbl_mission_status.setText("COMPLETED")
+            self.lbl_mission_status.setStyleSheet(
+                f"font-size: {theme.FONT_MD}px; font-weight: bold; "
+                f"color: {theme.ACCENT_BLUE};"
+            )
+            self.progress_mission.setValue(100)
+            if total > 0:
+                self.lbl_mission_fraction.setText(f"Node {total} / {total}")
+            else:
+                self.lbl_mission_fraction.setText("Done")
+            return
+
+        # executing
+        self.lbl_mission_status.setText("EXECUTING")
+        self.lbl_mission_status.setStyleSheet(
+            f"font-size: {theme.FONT_MD}px; font-weight: bold; "
+            f"color: {theme.ACCENT_GREEN};"
+        )
+        pct = int(round(100.0 * completed / total)) if total > 0 else 0
+        self.progress_mission.setValue(min(100, max(0, pct)))
+        if total > 0:
+            self.lbl_mission_fraction.setText(f"Node {completed} / {total}")
+        else:
+            self.lbl_mission_fraction.setText("")
 
     def set_mission_files(self, filenames: Iterable[str]) -> None:
         names = list(filenames)

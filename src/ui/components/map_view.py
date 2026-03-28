@@ -101,6 +101,21 @@ class MapView(QWebEngineView):
             "if (typeof clearMissionPreview === 'function') { clearMissionPreview(); }"
         )
 
+    def update_mission_progress(
+        self, last_node_index: int, mission_done: bool = False
+    ) -> None:
+        """Highlight waypoint markers by execution progress (Leaflet backend)."""
+        md = "true" if mission_done else "false"
+        js = (
+            "if (typeof updateMissionProgress === 'function') "
+            f"{{ updateMissionProgress({int(last_node_index)}, {md}); }}"
+        )
+        self.page().runJavaScript(js)
+
+    def clear_mission_progress_highlight(self) -> None:
+        """Reset mission markers to the default preview style."""
+        self.update_mission_progress(-1, False)
+
     def load_mission_preview(
         self, mission_type: str, coordinates: List[Tuple[float, float]]
     ) -> None:

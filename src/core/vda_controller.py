@@ -53,6 +53,7 @@ class VDAController(QObject):
         self._bridge.sensor_diag_updated.connect(self._state.set_sensor_diag)
         self._bridge.error_updated.connect(self._state.set_error)
         self._bridge.order_sent.connect(self._forward_order_result)
+        self._bridge.mission_progress.connect(self._state.set_mission_progress)
         self._bridge.start()
 
         logger.info(
@@ -60,8 +61,10 @@ class VDAController(QObject):
             f"(serial={serial}, manufacturer={manufacturer})"
         )
 
-    def _forward_order_result(self, ok: bool, detail: str) -> None:
-        self._state.order_dispatched.emit(ok, detail)
+    def _forward_order_result(self, ok: bool, detail: str, total_nodes: int) -> None:
+        if ok and total_nodes > 0:
+            self._state.set_active_order(detail, total_nodes)
+        self._state.order_dispatched.emit(ok, detail, total_nodes)
 
     def stop(self) -> None:
         if self._bridge is not None:

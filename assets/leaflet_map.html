@@ -139,6 +139,8 @@
         var missionPreviewPolyline = null;
         var missionPreviewPolygon = null;
         const MISSION_PREVIEW_COLOR = '#FF9800';
+        const MISSION_DONE_COLOR = '#00E676';
+        const MISSION_CURRENT_COLOR = '#00B0FF';
 
         function clearMissionPreview() {
             missionPreviewMarkers.forEach(function (m) {
@@ -191,6 +193,69 @@
                     map.fitBounds(b.pad(0.12));
                 }
             } catch (e) { /* ignore */ }
+        }
+
+        /** Reset markers to preview orange, or color by progress.
+         *  lastNodeIndex < 0: all orange (no progress).
+         *  missionDone: all green (mission finished).
+         *  Otherwise: index < lastNodeIndex green; == lastNodeIndex current (larger blue); rest orange.
+         */
+        function updateMissionProgress(lastNodeIndex, missionDone) {
+            missionDone = !!missionDone;
+            if (!missionPreviewMarkers.length) return;
+            if (missionDone) {
+                missionPreviewMarkers.forEach(function (m) {
+                    m.setStyle({
+                        radius: 5,
+                        color: MISSION_DONE_COLOR,
+                        weight: 2,
+                        fillColor: MISSION_DONE_COLOR,
+                        fillOpacity: 0.9
+                    });
+                });
+                return;
+            }
+            if (lastNodeIndex < 0) {
+                missionPreviewMarkers.forEach(function (m) {
+                    m.setStyle({
+                        radius: 5,
+                        color: MISSION_PREVIEW_COLOR,
+                        weight: 2,
+                        fillColor: MISSION_PREVIEW_COLOR,
+                        fillOpacity: 0.85
+                    });
+                });
+                return;
+            }
+            const n = missionPreviewMarkers.length;
+            const cur = Math.max(0, Math.min(n - 1, lastNodeIndex | 0));
+            missionPreviewMarkers.forEach(function (m, i) {
+                if (i < cur) {
+                    m.setStyle({
+                        radius: 5,
+                        color: MISSION_DONE_COLOR,
+                        weight: 2,
+                        fillColor: MISSION_DONE_COLOR,
+                        fillOpacity: 0.9
+                    });
+                } else if (i === cur) {
+                    m.setStyle({
+                        radius: 8,
+                        color: MISSION_CURRENT_COLOR,
+                        weight: 2,
+                        fillColor: MISSION_CURRENT_COLOR,
+                        fillOpacity: 0.95
+                    });
+                } else {
+                    m.setStyle({
+                        radius: 5,
+                        color: MISSION_PREVIEW_COLOR,
+                        weight: 2,
+                        fillColor: MISSION_PREVIEW_COLOR,
+                        fillOpacity: 0.85
+                    });
+                }
+            });
         }
     </script>
 </body>

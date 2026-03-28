@@ -196,6 +196,7 @@ class MainWindow(QMainWindow):
         s.tch_error.connect(self._on_tch_error)
         s.tch_session_saved.connect(self._on_tch_session_saved)
         s.order_dispatched.connect(self._on_order_dispatched)
+        s.mission_progress_changed.connect(self._on_mission_progress)
 
         s.docker_sequence_step.connect(self.sidebar_panel.set_docker_step_status)
         s.docker_sequence_finished.connect(self._on_docker_sequence_finished)
@@ -415,9 +416,9 @@ class MainWindow(QMainWindow):
             f"({len(coords)} waypoints, mapId={map_id})"
         )
 
-    def _on_order_dispatched(self, ok: bool, detail: str) -> None:
+    def _on_order_dispatched(self, ok: bool, detail: str, total_nodes: int) -> None:
         if ok:
-            logger.info(f"Order dispatched: {detail}")
+            logger.info(f"Order dispatched: {detail} ({total_nodes} nodes)")
         else:
             logger.error(f"Order dispatch failed: {detail}")
             QMessageBox.warning(
@@ -425,6 +426,25 @@ class MainWindow(QMainWindow):
                 "Execute mission",
                 f"Failed to send order to the robot.\n\n{detail}",
             )
+
+    def _on_mission_progress(
+        self,
+        status: str,
+        order_id: str,
+        completed: int,
+        total: int,
+        last_idx: int,
+    ) -> None:
+        self.sidebar_panel.update_mission_progress(
+            status, order_id, completed, total, last_idx
+        )
+        st = (status or "").lower()
+        if st == "idle" or (st == "executing" and last_idx < 0):
+            self.map_view.clear_mission_progress_highlight()
+        elif st == "completed":
+            self.map_view.update_mission_progress(last_idx, True)
+        else:
+            self.map_view.update_mission_progress(last_idx, False)
 
     def _on_load_mission_preview(self) -> None:
         name = self.sidebar_panel.current_mission_filename()

@@ -22,7 +22,10 @@ from utils.logger import logger
 
 class VDA5050BridgeThread(QThread):
     connection_status = Signal(bool)
-    order_sent = Signal(bool, str)  # success, order_id or error detail
+    order_sent = Signal(bool, str, int)  # success, order_id or error detail, total_nodes (0 if fail)
+    mission_progress = Signal(
+        str, int, str, int, int, bool
+    )  # orderId, orderUpdateId, lastNodeId, lastNodeSequenceId, len(nodeStates), driving
     battery_updated = Signal(float)
     position_updated = Signal(float, float, float, float)  # x, y, theta_deg, speed
     mode_updated = Signal(str)
@@ -176,6 +179,16 @@ class VDA5050BridgeThread(QThread):
         else:
             self.error_updated.emit("ALL CLEAR")
 
+        ns = state.nodeStates or []
+        self.mission_progress.emit(
+            state.orderId or "",
+            int(state.orderUpdateId or 0),
+            state.lastNodeId or "",
+            int(state.lastNodeSequenceId or 0),
+            len(ns),
+            bool(state.driving),
+        )
+
     # ── Commands (GUI → MQTT) ─────────────────────────────────
 
     def trigger_estop(self) -> None:
@@ -186,7 +199,7 @@ class VDA5050BridgeThread(QThread):
         if self._loop and self.client:
             asyncio.run_coroutine_threadsafe(self._publish_order(order), self._loop)
         else:
-            self.order_sent.emit(False, "MQTT client not ready")
+            self.order_sent.emit(False, "MQTT client not ready", 0)
 
     async def _publish_order(self, order: Order) -> None:
         try:
@@ -197,13 +210,13 @@ class VDA5050BridgeThread(QThread):
             )
             if ok:
                 logger.info(f"[VDA Bridge] Order published: {order.orderId}")
-                self.order_sent.emit(True, order.orderId)
+                self.order_sent.emit(True, order.orderId, len(order.nodes))
             else:
                 logger.error("[VDA Bridge] send_order returned False")
-                self.order_sent.emit(False, "send_order returned False")
+                self.order_sent.emit(False, "send_order returned False", 0)
         except Exception as exc:  # noqa: BLE001
             logger.exception("[VDA Bridge] send_order failed")
-            self.order_sent.emit(False, str(exc))
+            self.order_sent.emit(False, str(exc), 0)
 
     async def _send_estop(self) -> None:
         logger.warning("Initiating Emergency Stop sequence")
