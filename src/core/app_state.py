@@ -15,6 +15,7 @@ from typing import List, Optional, Tuple
 from PySide6.QtCore import QObject, Signal
 
 from utils.geometry import haversine_distance_m, polygon_area_m2
+from utils.logger import logger
 
 
 class AppState(QObject):
@@ -91,6 +92,9 @@ class AppState(QObject):
         # PATH execute: track one active order until completed or cleared
         self._active_order_id: str = ""
         self._total_nodes: int = 0
+        self._order_acknowledged: bool = False
+        self._order_seq_valid: bool = False
+        self._saw_driving: bool = False
 
     # ── Read-only properties ──────────────────────────────────
 
@@ -190,6 +194,9 @@ class AppState(QObject):
     def _clear_tracked_order(self) -> None:
         self._active_order_id = ""
         self._total_nodes = 0
+        self._order_acknowledged = False
+        self._order_seq_valid = False
+        self._saw_driving = False
 
     def _emit_mission_completed_and_clear(self) -> None:
         oid = self._active_order_id
@@ -210,6 +217,13 @@ class AppState(QObject):
         driving: bool,
     ) -> None:
         """Update from VDA5050 State; only affects UI when an order is tracked."""
+        if self._active_order_id:
+            logger.info(
+                f"[MissionProgress] oid={state_order_id!r} seq={last_node_seq} "
+                f"nodeStates={nodes_remaining} driving={driving} "
+                f"acked={self._order_acknowledged} seqValid={self._order_seq_valid} drove={self._saw_driving} "
+                f"tracked={self._active_order_id!r} total={self._total_nodes}"
+            )
         if not self._active_order_id:
             return
         total = self._total_nodes
@@ -221,22 +235,35 @@ class AppState(QObject):
             return
 
         if oid and oid == self._active_order_id:
+            self._order_acknowledged = True
+            if driving:
+                self._saw_driving = True
+
+            # Wait until the robot resets to sequenceId 0 (start of our order)
+            # before trusting lastNodeSequenceId; stale values from a prior
+            # mission can be arbitrarily high and would show false progress.
+            if not self._order_seq_valid:
+                if last_node_seq == 0:
+                    self._order_seq_valid = True
+                else:
+                    self.mission_progress_changed.emit(
+                        "executing", oid, 0, total, -1,
+                    )
+                    return
+
             last_idx = max(0, min(total - 1, last_node_seq // 2))
-            completed = min(total, max(0, total - nodes_remaining))
-            if (
-                nodes_remaining == 0
-                and not driving
-                and (completed >= total or last_idx >= total - 1)
-            ):
+            completed = last_idx
+            if self._saw_driving and last_idx >= total - 1 and not driving:
                 self._emit_mission_completed_and_clear()
                 return
+            map_idx = last_idx if (driving or last_idx > 0) else -1
             self.mission_progress_changed.emit(
-                "executing", oid, completed, total, last_idx
+                "executing", oid, completed, total, map_idx,
             )
             return
 
-        # Empty order id from robot: often idle after mission
-        if not oid and nodes_remaining == 0 and not driving:
+        # Robot cleared orderId after finishing — only if it actually drove
+        if not oid and not driving and self._saw_driving:
             self._emit_mission_completed_and_clear()
 
     def reset_mission_progress_ui(self) -> None:
