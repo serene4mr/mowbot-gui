@@ -56,6 +56,8 @@ class MainWindow(QMainWindow):
         self._app_state = AppState(
             self,
             poly_max_close_gap_m=self._teach_poly_max_close_gap_m(),
+            poly_min_area_m2=self._teach_poly_min_area_m2(),
+            poly_reject_self_intersection=self._teach_poly_reject_self_intersection(),
         )
 
         # Layer 1: full-screen map background
@@ -105,6 +107,21 @@ class MainWindow(QMainWindow):
             return float(raw)
         except (TypeError, ValueError):
             return 5.0
+
+    def _teach_poly_min_area_m2(self) -> float:
+        t = self.config.get("teach_in") or {}
+        raw = t.get("poly_min_area_m2", 0.0)
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _teach_poly_reject_self_intersection(self) -> bool:
+        t = self.config.get("teach_in") or {}
+        raw = t.get("poly_reject_self_intersection", True)
+        if isinstance(raw, bool):
+            return raw
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
     @staticmethod
     def _parse_mission_json_file(

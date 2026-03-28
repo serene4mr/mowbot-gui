@@ -14,7 +14,12 @@ from typing import List, Optional, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
-from utils.geometry import haversine_distance_m, polygon_area_m2
+from utils.geometry import (
+    haversine_distance_m,
+    new_edge_intersects_existing,
+    polygon_area_m2,
+    polygon_has_self_intersection,
+)
 from utils.logger import logger
 
 
@@ -65,6 +70,8 @@ class AppState(QObject):
         parent: Optional[QObject] = None,
         *,
         poly_max_close_gap_m: float = 5.0,
+        poly_min_area_m2: float = 0.0,
+        poly_reject_self_intersection: bool = True,
     ):
         super().__init__(parent)
         self._mqtt_ok: bool = False
@@ -88,6 +95,11 @@ class AppState(QObject):
             self._poly_max_close_gap_m = float(poly_max_close_gap_m)
         except (TypeError, ValueError):
             self._poly_max_close_gap_m = 5.0
+        try:
+            self._poly_min_area_m2 = float(poly_min_area_m2)
+        except (TypeError, ValueError):
+            self._poly_min_area_m2 = 0.0
+        self._poly_reject_self_intersection = bool(poly_reject_self_intersection)
 
         # PATH execute: track one active order until completed or cleared
         self._active_order_id: str = ""
@@ -297,6 +309,16 @@ class AppState(QObject):
         lat, lon = self._last_lat, self._last_lon
         self._tch_points.append((lat, lon, self._last_theta_deg))
         n = len(self._tch_points)
+        if (
+            self._poly_reject_self_intersection
+            and self._tch_mode == "POLY"
+            and n >= 4
+        ):
+            pts_2d = [(p[0], p[1]) for p in self._tch_points]
+            if new_edge_intersects_existing(pts_2d):
+                self.tch_error.emit(
+                    "Edge crosses an earlier segment \u2014 consider Undo."
+                )
         self.tch_point_added.emit(lat, lon, n)
         self._emit_tch_stats()
         return True
@@ -334,6 +356,26 @@ class AppState(QObject):
                 return (
                     f"POLY cannot be saved: first and last point are {gap_m:.1f} m apart "
                     f"(max {self._poly_max_close_gap_m:.1f} m to close the loop)."
+                )
+        if self._tch_mode == "POLY" and self._poly_min_area_m2 > 0 and len(
+            self._tch_points
+        ) >= 3:
+            area = polygon_area_m2([(p[0], p[1]) for p in self._tch_points])
+            if area < self._poly_min_area_m2:
+                return (
+                    f"POLY cannot be saved: area is {area:.1f} m² "
+                    f"(minimum {self._poly_min_area_m2:.1f} m²)."
+                )
+        if (
+            self._tch_mode == "POLY"
+            and self._poly_reject_self_intersection
+            and len(self._tch_points) >= 4
+        ):
+            pts_2d = [(p[0], p[1]) for p in self._tch_points]
+            if polygon_has_self_intersection(pts_2d):
+                return (
+                    "POLY cannot be saved: boundary edges cross each other "
+                    "(self-intersection)."
                 )
         return None
 

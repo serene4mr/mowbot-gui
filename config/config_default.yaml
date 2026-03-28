@@ -18,9 +18,14 @@ broker:
 missions:
   directory: "missions"
 
-# Teach-in validation (POLY: max distance between first and last point when saving)
+# Teach-in validation (POLY)
+# - poly_max_close_gap_m: first and last waypoint must be within this distance (m) to close the loop; <=0 disables
+# - poly_min_area_m2: reject polygons smaller than this (m²); <=0 disables
+# - poly_reject_self_intersection: reject save (and warn live) when boundary edges cross
 teach_in:
   poly_max_close_gap_m: 5.0
+  poly_min_area_m2: 0.0
+  poly_reject_self_intersection: true
 
 
 docker_containers:

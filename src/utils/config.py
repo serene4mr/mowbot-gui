@@ -67,6 +67,12 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
             "poly_max_close_gap_m": _to_float_or_none(
                 os.getenv("MOWBOT_TEACH_POLY_MAX_CLOSE_GAP_M")
             ),
+            "poly_min_area_m2": _to_float_or_none(
+                os.getenv("MOWBOT_TEACH_POLY_MIN_AREA_M2")
+            ),
+            "poly_reject_self_intersection": _to_bool_or_none(
+                os.getenv("MOWBOT_TEACH_POLY_REJECT_SELF_INTERSECTION")
+            ),
         },
     }
     config = deep_merge(config, _drop_nones_recursive(env_override))
