@@ -99,9 +99,9 @@
 
         function addTeachPoint(lat, lng) {
             const m = L.circleMarker([lat, lng], {
-                radius: 6,
+                radius: 4,
                 color: '#00B0FF',
-                weight: 2,
+                weight: 1,
                 fillColor: '#00B0FF',
                 fillOpacity: 0.9
             }).addTo(teachGroup);
@@ -171,9 +171,9 @@
             coords.forEach(function (c) {
                 const lat = c[0], lng = c[1];
                 const m = L.circleMarker([lat, lng], {
-                    radius: 5,
+                    radius: 3,
                     color: MISSION_PREVIEW_COLOR,
-                    weight: 2,
+                    weight: 1,
                     fillColor: MISSION_PREVIEW_COLOR,
                     fillOpacity: 0.85
                 }).addTo(missionPreviewGroup);
@@ -225,9 +225,9 @@
                     var lat = c[0], lng = c[1];
                     var isStart = (i === 0);
                     var m = L.circleMarker([lat, lng], {
-                        radius: isStart ? 7 : 5,
+                        radius: isStart ? 4 : 3,
                         color: isStart ? MISSION_COVERAGE_START : MISSION_PREVIEW_COLOR,
-                        weight: 2,
+                        weight: 1,
                         fillColor: isStart ? MISSION_COVERAGE_START : MISSION_PREVIEW_COLOR,
                         fillOpacity: 0.88
                     }).addTo(missionPreviewGroup);
@@ -259,9 +259,9 @@
             if (missionDone) {
                 missionPreviewMarkers.forEach(function (m) {
                     m.setStyle({
-                        radius: 5,
+                        radius: 3,
                         color: MISSION_DONE_COLOR,
-                        weight: 2,
+                        weight: 1,
                         fillColor: MISSION_DONE_COLOR,
                         fillOpacity: 0.9
                     });
@@ -271,9 +271,9 @@
             if (lastNodeIndex < 0) {
                 missionPreviewMarkers.forEach(function (m) {
                     m.setStyle({
-                        radius: 5,
+                        radius: 3,
                         color: MISSION_PREVIEW_COLOR,
-                        weight: 2,
+                        weight: 1,
                         fillColor: MISSION_PREVIEW_COLOR,
                         fillOpacity: 0.85
                     });
@@ -285,25 +285,25 @@
             missionPreviewMarkers.forEach(function (m, i) {
                 if (i < cur) {
                     m.setStyle({
-                        radius: 5,
+                        radius: 3,
                         color: MISSION_DONE_COLOR,
-                        weight: 2,
+                        weight: 1,
                         fillColor: MISSION_DONE_COLOR,
                         fillOpacity: 0.9
                     });
                 } else if (i === cur) {
                     m.setStyle({
-                        radius: 8,
+                        radius: 5,
                         color: MISSION_CURRENT_COLOR,
-                        weight: 2,
+                        weight: 1,
                         fillColor: MISSION_CURRENT_COLOR,
                         fillOpacity: 0.95
                     });
                 } else {
                     m.setStyle({
-                        radius: 5,
+                        radius: 3,
                         color: MISSION_PREVIEW_COLOR,
-                        weight: 2,
+                        weight: 1,
                         fillColor: MISSION_PREVIEW_COLOR,
                         fillOpacity: 0.85
                     });
