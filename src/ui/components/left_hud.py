@@ -42,5 +42,5 @@ class LeftHUD(QFrame):
         """Update position and velocity from the main thread."""
         self.lbl_lat.setText(f"LAT: {y}")
         self.lbl_lon.setText(f"LON: {x}")
-        self.lbl_theta.setText(f"THETA: {theta:.2f} deg")
+        self.lbl_theta.setText(f"THETA: {theta:.3f} rad")
         self.lbl_vel.setText(f"VEL: {velocity:.2f} m/s")

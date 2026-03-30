@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import math
 from datetime import datetime, timezone
 from typing import List, Tuple, Union
 
 from vda5050.models.order import Edge, Node, NodePosition, Order
 
-Waypoint = Union[Tuple[float, float, float], Tuple[float, float]]  # (lat, lon[, theta_deg])
+Waypoint = Union[Tuple[float, float, float], Tuple[float, float]]  # (lat, lon[, theta_rad])
 
 
 def build_path_order(
@@ -21,7 +20,7 @@ def build_path_order(
 ) -> Order:
     """Create a VDA5050 Order from a PATH: open polyline, no closing edge.
 
-    Coordinates are (lat, lon, theta_deg); NodePosition uses x=lon, y=lat.
+    Coordinates are (lat, lon, theta_rad); NodePosition uses x=lon, y=lat.
     VDA5050 theta is radians; missing theta defaults to 0.
     """
     if len(coordinates) < 2:
@@ -35,7 +34,7 @@ def build_path_order(
 
     for i, coord in enumerate(coordinates):
         lat, lon = coord[0], coord[1]
-        theta_deg = coord[2] if len(coord) >= 3 else 0.0
+        theta_rad = coord[2] if len(coord) >= 3 else 0.0
         seq = i * 2
         nodes.append(
             Node(
@@ -45,7 +44,7 @@ def build_path_order(
                 nodePosition=NodePosition(
                     x=float(lon),
                     y=float(lat),
-                    theta=math.radians(theta_deg),
+                    theta=float(theta_rad),
                     mapId=map_id,
                 ),
                 actions=[],

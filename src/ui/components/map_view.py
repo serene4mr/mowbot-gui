@@ -169,7 +169,7 @@ class MapView(QWebEngineView):
     # ── JS bridge (Python → JavaScript) ──────────────────────
     #
     # Both leaflet_map.html and esri_map.html expose the same
-    # global `updateRobotPosition(lat, lng, headingDeg)` function,
+    # global `updateRobotPosition(lat, lng, headingRad)` function,
     # so this single call works for either backend.
     #
     # TODO: Replace raw runJavaScript with QWebChannel for
@@ -177,11 +177,11 @@ class MapView(QWebEngineView):
     #       are needed (e.g. click-to-waypoint).
 
     def update_robot_marker(
-        self, lat: float, lon: float, heading_deg: float
+        self, lat: float, lon: float, heading_rad: float
     ) -> None:
         js = (
             "if (typeof updateRobotPosition === 'function') "
-            f"{{ updateRobotPosition({lat}, {lon}, {heading_deg}); }}"
+            f"{{ updateRobotPosition({lat}, {lon}, {heading_rad}); }}"
         )
         self.page().runJavaScript(js)
 

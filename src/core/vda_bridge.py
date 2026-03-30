@@ -27,12 +27,13 @@ class VDA5050BridgeThread(QThread):
         str, int, str, int, int, bool
     )  # orderId, orderUpdateId, lastNodeId, lastNodeSequenceId, len(nodeStates), driving
     battery_updated = Signal(float)
-    position_updated = Signal(float, float, float, float)  # x, y, theta_deg, speed
+    position_updated = Signal(float, float, float, float)  # x, y, theta_rad, speed
     mode_updated = Signal(str)
     driving_status = Signal(bool)
     safety_updated = Signal(str)
     sensor_diag_updated = Signal(str)
     error_updated = Signal(str)
+    navigation_failed = Signal(str, str)  # description, hint
 
     def __init__(
         self,
@@ -144,12 +145,12 @@ class VDA5050BridgeThread(QThread):
 
         ap = state.agvPosition
         if ap is not None and ap.positionInitialized:
-            theta_deg = math.degrees(ap.theta) if ap.theta is not None else 0.0
+            theta_rad = ap.theta if ap.theta is not None else 0.0
             vx = vy = 0.0
             if state.velocity is not None:
                 vx = state.velocity.vx or 0.0
                 vy = state.velocity.vy or 0.0
-            self.position_updated.emit(ap.x, ap.y, theta_deg, math.hypot(vx, vy))
+            self.position_updated.emit(ap.x, ap.y, theta_rad, math.hypot(vx, vy))
 
         if state.operatingMode:
             self.mode_updated.emit(state.operatingMode.value)
@@ -169,9 +170,17 @@ class VDA5050BridgeThread(QThread):
                     break
 
         if state.errors:
-            fatal = [e for e in state.errors if e.errorLevel.value == "FATAL"]
+            fatal = [e for e in state.errors if self._enum_name(e.errorLevel) == "FATAL"]
             if fatal:
-                self.error_updated.emit(f"FATAL: {fatal[0].errorDescription}")
+                first_fatal = fatal[0]
+                self.error_updated.emit(f"FATAL: {first_fatal.errorDescription}")
+                if self._enum_name(getattr(first_fatal, "errorType", "")) == "navigationError":
+                    hint = str(getattr(first_fatal, "errorHint", "") or "").strip()
+                    self.navigation_failed.emit(
+                        str(getattr(first_fatal, "errorDescription", "")).strip()
+                        or "Navigation failed",
+                        hint,
+                    )
             else:
                 self.error_updated.emit(
                     f"WARNING: {state.errors[0].errorDescription}"
@@ -188,6 +197,10 @@ class VDA5050BridgeThread(QThread):
             len(ns),
             bool(state.driving),
         )
+
+    @staticmethod
+    def _enum_name(value: object) -> str:
+        return str(getattr(value, "value", value) or "").strip()
 
     # ── Commands (GUI → MQTT) ─────────────────────────────────
 

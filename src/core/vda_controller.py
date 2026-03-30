@@ -52,6 +52,7 @@ class VDAController(QObject):
         self._bridge.mode_updated.connect(self._state.set_mode)
         self._bridge.sensor_diag_updated.connect(self._state.set_sensor_diag)
         self._bridge.error_updated.connect(self._state.set_error)
+        self._bridge.navigation_failed.connect(self._on_navigation_failed)
         self._bridge.order_sent.connect(self._forward_order_result)
         self._bridge.mission_progress.connect(self._state.set_mission_progress)
         self._bridge.start()
@@ -65,6 +66,12 @@ class VDAController(QObject):
         if ok and total_nodes > 0:
             self._state.set_active_order(detail, total_nodes)
         self._state.order_dispatched.emit(ok, detail, total_nodes)
+
+    def _on_navigation_failed(self, description: str, hint: str) -> None:
+        detail = str(description or "Navigation failed").strip()
+        if hint:
+            detail = f"{detail} ({hint})"
+        self._state.set_mission_failed(detail)
 
     def stop(self) -> None:
         if self._bridge is not None:

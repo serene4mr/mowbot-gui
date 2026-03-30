@@ -171,9 +171,9 @@ class MainWindow(QMainWindow):
     def _parse_mission_json_file(
         path: str,
     ) -> Tuple[Optional[str], List[Tuple[float, float, float]], Optional[str]]:
-        """Returns (type, coordinates as (lat, lon, theta_deg), error_message).
+        """Returns (type, coordinates as (lat, lon, theta_rad), error_message).
 
-        Older files with only [lat, lon] get theta_deg = 0.0.
+        Older files with only [lat, lon] get theta_rad = 0.0.
         """
         try:
             with open(path, encoding="utf-8") as f:
@@ -264,9 +264,9 @@ class MainWindow(QMainWindow):
         s.docker_error.connect(self._on_docker_error)
 
     def _update_map_marker(
-        self, x: float, y: float, theta_deg: float, _speed: float
+        self, x: float, y: float, theta_rad: float, _speed: float
     ) -> None:
-        self.map_view.update_robot_marker(lat=y, lon=x, heading_deg=theta_deg)
+        self.map_view.update_robot_marker(lat=y, lon=x, heading_rad=theta_rad)
 
     def _on_status_line(self, text: str) -> None:
         self._latest_status_line = text
@@ -534,6 +534,10 @@ class MainWindow(QMainWindow):
         elif st == "completed":
             self.map_view.update_mission_progress(last_idx, True)
             self._mission_clear_timer.start()
+        elif st == "failed":
+            self._mission_clear_timer.stop()
+            if last_idx >= 0:
+                self.map_view.update_mission_progress(last_idx, False)
         else:
             self.map_view.update_mission_progress(last_idx, False)
 

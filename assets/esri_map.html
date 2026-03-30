@@ -12,14 +12,66 @@
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; background-color: #121212; }
         #map { height: 100%; width: 100%; }
         .maplibregl-ctrl-bottom-right { display: none !important; }
+        #cardinal-overlay {
+            position: absolute;
+            left: 12px;
+            bottom: 12px;
+            width: 74px;
+            height: 74px;
+            pointer-events: none;
+            z-index: 1000;
+            font-family: Arial, sans-serif;
+            font-size: 11px;
+            font-weight: 700;
+            color: #ffffff;
+            text-shadow: 0 0 6px rgba(0, 0, 0, 0.85);
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            background: rgba(10, 14, 18, 0.42);
+            backdrop-filter: blur(1px);
+        }
+        #cardinal-overlay span {
+            position: absolute;
+            opacity: 0.95;
+        }
+        #cardinal-overlay::before,
+        #cardinal-overlay::after {
+            content: '';
+            position: absolute;
+            background: rgba(255, 255, 255, 0.26);
+        }
+        #cardinal-overlay::before {
+            left: 50%;
+            top: 9px;
+            bottom: 9px;
+            width: 1px;
+            transform: translateX(-50%);
+        }
+        #cardinal-overlay::after {
+            top: 50%;
+            left: 9px;
+            right: 9px;
+            height: 1px;
+            transform: translateY(-50%);
+        }
+        #cardinal-overlay .north { top: 5px; left: 50%; transform: translateX(-50%); }
+        #cardinal-overlay .south { bottom: 5px; left: 50%; transform: translateX(-50%); }
+        #cardinal-overlay .east { right: 6px; top: 50%; transform: translateY(-50%); }
+        #cardinal-overlay .west { left: 6px; top: 50%; transform: translateY(-50%); }
     </style>
 </head>
 <body>
     <div id="map"></div>
+    <div id="cardinal-overlay" aria-hidden="true">
+        <span class="north">N</span>
+        <span class="east">E</span>
+        <span class="south">S</span>
+        <span class="west">W</span>
+    </div>
 
     <script>
         var TRACK_ZOOM = 19;
-        // Heading → CSS rotation with +180deg calibration offset.
+        // ROS2 ENU yaw (0=E, +CCW) -> screen/CSS rotation.
         var MOWBOT_ARROW_SVG =
             '<svg width="30" height="30" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
             '<path d="M50 5 L90 90 L50 70 L10 90 L50 5 Z" fill="#00ff88" stroke="#ffffff" stroke-width="2"/></svg>';
@@ -56,8 +108,8 @@
 
         var robotMarker = null;
 
-        function updateRobotPosition(lat, lng, headingDeg) {
-            var markerHeading = (headingDeg || 0) + 180;
+        function updateRobotPosition(lat, lng, headingRad) {
+            var markerHeading = (Math.PI / 2) - (headingRad || 0);
 
             if (!robotMarker) {
                 var el = document.createElement('div');
@@ -65,7 +117,7 @@
                 el.style.width = '30px';
                 el.style.height = '30px';
                 el.innerHTML = MOWBOT_ARROW_SVG;
-                el.style.transform = 'rotate(' + markerHeading + 'deg)';
+                el.style.transform = 'rotate(' + markerHeading + 'rad)';
                 el.style.transformOrigin = '50% 50%';
 
                 robotMarker = new maplibregl.Marker({ element: el })
@@ -75,7 +127,7 @@
                 robotMarker.setLngLat([lng, lat]);
                 var arrow = document.getElementById('mowbot-arrow');
                 if (arrow) {
-                    arrow.style.transform = 'rotate(' + markerHeading + 'deg)';
+                    arrow.style.transform = 'rotate(' + markerHeading + 'rad)';
                 }
             }
 

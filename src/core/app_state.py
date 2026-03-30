@@ -32,7 +32,7 @@ class AppState(QObject):
 
     mqtt_changed = Signal(bool)
     battery_changed = Signal(float)
-    position_changed = Signal(float, float, float, float)  # x, y, theta_deg, speed
+    position_changed = Signal(float, float, float, float)  # x, y, theta_rad, speed
     mode_changed = Signal(str)
     sensor_diag_changed = Signal(str)
     error_changed = Signal(str)
@@ -83,10 +83,10 @@ class AppState(QObject):
         # Last robot fix: x=lon, y=lat (matches VDA / map_view convention)
         self._last_lon: float = 0.0
         self._last_lat: float = 0.0
-        self._last_theta_deg: float = 0.0
+        self._last_theta_rad: float = 0.0
         self._has_position: bool = False
 
-        # Teach-in session (lat, lon, theta_deg from last telemetry when logged)
+        # Teach-in session (lat, lon, theta_rad from last telemetry when logged)
         self._tch_mode: str = "PATH"
         self._tch_points: List[Tuple[float, float, float]] = []
         self._tch_auto_record: bool = False
@@ -107,6 +107,7 @@ class AppState(QObject):
         self._order_acknowledged: bool = False
         self._order_seq_valid: bool = False
         self._saw_driving: bool = False
+        self._last_completed_nodes: int = 0
 
     # ── Read-only properties ──────────────────────────────────
 
@@ -166,14 +167,14 @@ class AppState(QObject):
         self._refresh_status_line()
 
     def set_position(
-        self, x: float, y: float, theta_deg: float, speed_mps: float
+        self, x: float, y: float, theta_rad: float, speed_mps: float
     ) -> None:
         # Cache for teach-in logging (x = longitude, y = latitude)
         self._last_lon = float(x)
         self._last_lat = float(y)
-        self._last_theta_deg = float(theta_deg)
+        self._last_theta_rad = float(theta_rad)
         self._has_position = True
-        self.position_changed.emit(x, y, theta_deg, speed_mps)
+        self.position_changed.emit(x, y, theta_rad, speed_mps)
 
     def set_mode(self, mode: str) -> None:
         if mode != self._operating_mode:
@@ -215,6 +216,7 @@ class AppState(QObject):
         self._order_acknowledged = False
         self._order_seq_valid = False
         self._saw_driving = False
+        self._last_completed_nodes = 0
 
     def _emit_mission_completed_and_clear(self) -> None:
         oid = self._active_order_id
@@ -271,6 +273,7 @@ class AppState(QObject):
 
             last_idx = max(0, min(total - 1, last_node_seq // 2))
             completed = last_idx
+            self._last_completed_nodes = completed
             if self._saw_driving and last_idx >= total - 1 and not driving:
                 self._emit_mission_completed_and_clear()
                 return
@@ -283,6 +286,18 @@ class AppState(QObject):
         # Robot cleared orderId after finishing — only if it actually drove
         if not oid and not driving and self._saw_driving:
             self._emit_mission_completed_and_clear()
+
+    def set_mission_failed(self, reason: str) -> None:
+        """Latch active mission as failed; clear tracking after emitting UI state."""
+        oid = self._active_order_id
+        total = self._total_nodes
+        if not oid or total <= 0:
+            return
+        completed = max(0, min(total, self._last_completed_nodes))
+        last_idx = max(0, min(total - 1, completed))
+        self._clear_tracked_order()
+        self.mission_progress_changed.emit("failed", oid, completed, total, last_idx)
+        self.set_error(f"FATAL: {reason}")
 
     def reset_mission_progress_ui(self) -> None:
         """Clear sidebar/map mission progress (e.g. new preview without execute)."""
@@ -313,7 +328,7 @@ class AppState(QObject):
             self.tch_error.emit("No position yet. Wait for GPS / localization.")
             return False
         lat, lon = self._last_lat, self._last_lon
-        self._tch_points.append((lat, lon, self._last_theta_deg))
+        self._tch_points.append((lat, lon, self._last_theta_rad))
         n = len(self._tch_points)
         if (
             self._poly_reject_self_intersection

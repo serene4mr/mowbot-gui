@@ -342,7 +342,7 @@ class RightSidebar(QFrame):
         total: int,
         _last_node_index: int,
     ) -> None:
-        """Update RUN tab mission progress (idle / executing / completed)."""
+        """Update RUN tab mission progress (idle / executing / completed / failed)."""
         st = (status or "idle").strip().lower()
         if st == "idle":
             self.lbl_mission_status.setText("IDLE")
@@ -369,6 +369,20 @@ class RightSidebar(QFrame):
                 self.lbl_mission_fraction.setText(f"Node {total} / {total}")
             else:
                 self.lbl_mission_fraction.setText("Done")
+            return
+
+        if st == "failed":
+            self.lbl_mission_status.setText("FAILED")
+            self.lbl_mission_status.setStyleSheet(
+                f"font-size: {theme.FONT_MD}px; font-weight: bold; "
+                f"color: {theme.ACCENT_RED};"
+            )
+            pct = int(round(100.0 * completed / total)) if total > 0 else 0
+            self.progress_mission.setValue(min(100, max(0, pct)))
+            if total > 0:
+                self.lbl_mission_fraction.setText(f"Node {completed} / {total}")
+            else:
+                self.lbl_mission_fraction.setText("Failed")
             return
 
         # executing
