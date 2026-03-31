@@ -258,6 +258,11 @@ class MainWindow(QMainWindow):
         s.tch_session_saved.connect(self._on_tch_session_saved)
         s.order_dispatched.connect(self._on_order_dispatched)
         s.mission_progress_changed.connect(self._on_mission_progress)
+        s.driving_changed.connect(self._on_driving_changed)
+        s.paused_changed.connect(self._on_paused_changed)
+        s.estop_changed.connect(self._on_estop_changed)
+        s.action_states_changed.connect(self._on_action_states_changed)
+        s.robot_ready_changed.connect(self.sidebar_panel.set_robot_ready)
 
         s.docker_sequence_step.connect(self.sidebar_panel.set_docker_step_status)
         s.docker_sequence_finished.connect(self._on_docker_sequence_finished)
@@ -359,6 +364,58 @@ class MainWindow(QMainWindow):
         sb.execute_mission_requested.connect(self._on_execute_mission)
         sb.delete_mission_requested.connect(self._on_delete_mission)
         sb.load_mission_preview_requested.connect(self._on_load_mission_preview)
+        sb.cancel_order_requested.connect(self._on_cancel_order)
+        sb.pause_requested.connect(self._on_pause)
+        sb.resume_requested.connect(self._on_resume)
+
+    def _sync_run_tab_robot_ui(self) -> None:
+        st = self._app_state
+        has_order = bool((st.active_order_id or "").strip())
+        self.sidebar_panel.refresh_robot_controls(
+            has_order,
+            st.driving,
+            st.paused,
+            st.estop,
+        )
+
+    def _on_driving_changed(self, _driving: bool) -> None:
+        self._sync_run_tab_robot_ui()
+
+    def _on_paused_changed(self, _paused: bool) -> None:
+        self._sync_run_tab_robot_ui()
+
+    def _on_estop_changed(self, _estop: str) -> None:
+        self._sync_run_tab_robot_ui()
+
+    def _on_action_states_changed(self, states: list) -> None:
+        self.sidebar_panel.update_action_feedback(states)
+
+    def _on_cancel_order(self) -> None:
+        if not (self._app_state.active_order_id or "").strip():
+            logger.info("Cancel ignored: no active order")
+            return
+        logger.info("Cancel order requested from UI")
+        self._vda.send_cancel_order()
+
+    def _on_pause(self) -> None:
+        if not (self._app_state.active_order_id or "").strip():
+            logger.info("Pause ignored: no active order")
+            return
+        if self._app_state.paused:
+            logger.info("Pause ignored: already paused")
+            return
+        logger.info("Start pause requested from UI")
+        self._vda.send_start_pause()
+
+    def _on_resume(self) -> None:
+        if not (self._app_state.active_order_id or "").strip():
+            logger.info("Resume ignored: no active order")
+            return
+        if not self._app_state.paused:
+            logger.info("Resume ignored: not paused")
+            return
+        logger.info("Stop pause (resume) requested from UI")
+        self._vda.send_stop_pause()
 
     def _on_tab_changed(self, index: int) -> None:
         if self._app_state.operating_mode is None:
@@ -542,6 +599,7 @@ class MainWindow(QMainWindow):
                 self.map_view.update_mission_progress(last_idx, False)
         else:
             self.map_view.update_mission_progress(last_idx, False)
+        self._sync_run_tab_robot_ui()
 
     def _clear_finished_mission_overlay(self) -> None:
         """Remove mission markers/overlay after completion (called by timer)."""

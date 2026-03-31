@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timezone
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
@@ -21,6 +21,8 @@ from utils.geometry import (
     polygon_has_self_intersection,
 )
 from utils.logger import logger
+
+_EMPTY_ORDER_CLEAR_STREAK = 3
 
 
 class AppState(QObject):
@@ -36,6 +38,11 @@ class AppState(QObject):
     mode_changed = Signal(str)
     sensor_diag_changed = Signal(str)
     error_changed = Signal(str)
+    driving_changed = Signal(bool)
+    paused_changed = Signal(bool)
+    estop_changed = Signal(str)
+    action_states_changed = Signal(list)
+    robot_ready_changed = Signal(bool)
     robot_id_changed = Signal(str)
     status_line_changed = Signal(str)  # composed "IMU: OK | BAT: 85% | MQTT: OK"
 
@@ -79,6 +86,11 @@ class AppState(QObject):
         self._sensor_diag: str = "--"
         self._operating_mode: Optional[str] = None
         self._last_error: Optional[str] = None
+        self._driving: bool = False
+        self._paused: bool = False
+        self._estop: str = "NONE"
+        self._action_states: List[Any] = []
+        self._last_robot_ready: Optional[bool] = None
 
         # Last robot fix: x=lon, y=lat (matches VDA / map_view convention)
         self._last_lon: float = 0.0
@@ -108,6 +120,8 @@ class AppState(QObject):
         self._order_seq_valid: bool = False
         self._saw_driving: bool = False
         self._last_completed_nodes: int = 0
+        self._empty_order_streak: int = 0
+        self._abort_action_terminal_seen: bool = False
 
     # ── Read-only properties ──────────────────────────────────
 
@@ -146,6 +160,28 @@ class AppState(QObject):
     @property
     def has_position_fix(self) -> bool:
         return self._has_position
+
+    @property
+    def driving(self) -> bool:
+        return self._driving
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
+    @property
+    def estop(self) -> str:
+        return self._estop
+
+    @property
+    def robot_ready(self) -> bool:
+        oid = (self._active_order_id or "").strip()
+        return (
+            not oid
+            and not self._paused
+            and self._estop == "NONE"
+            and not self._driving
+        )
 
     def get_robot_latlon(self) -> Optional[Tuple[float, float]]:
         """Current fix as (lat, lon) when available; ``x``/``y`` telemetry is lon/lat."""
@@ -193,6 +229,40 @@ class AppState(QObject):
             self._last_error = msg
             self.error_changed.emit(msg)
 
+    def _check_robot_ready(self) -> None:
+        ready = self.robot_ready
+        if ready != self._last_robot_ready:
+            self._last_robot_ready = ready
+            self.robot_ready_changed.emit(ready)
+
+    def set_driving(self, driving: bool) -> None:
+        d = bool(driving)
+        if d != self._driving:
+            self._driving = d
+            self.driving_changed.emit(d)
+        self._check_robot_ready()
+
+    def set_paused(self, paused: bool) -> None:
+        p = bool(paused)
+        if p != self._paused:
+            self._paused = p
+            self.paused_changed.emit(p)
+        self._check_robot_ready()
+
+    def set_estop(self, estop: str) -> None:
+        e = str(estop or "NONE").strip() or "NONE"
+        if e != self._estop:
+            self._estop = e
+            self.estop_changed.emit(e)
+        self._check_robot_ready()
+
+    def set_action_states(self, states: List[Any]) -> None:
+        self._action_states = list(states)
+        self._abort_action_terminal_seen = self._has_terminal_abort_action(
+            self._action_states
+        )
+        self.action_states_changed.emit(self._action_states)
+
     def set_robot_id(self, robot_id: str) -> None:
         self.robot_id_changed.emit(robot_id)
 
@@ -210,6 +280,7 @@ class AppState(QObject):
             self.mission_progress_changed.emit(
                 "executing", self._active_order_id, 0, self._total_nodes, -1
             )
+        self._check_robot_ready()
 
     def _clear_tracked_order(self) -> None:
         self._active_order_id = ""
@@ -218,6 +289,23 @@ class AppState(QObject):
         self._order_seq_valid = False
         self._saw_driving = False
         self._last_completed_nodes = 0
+        self._empty_order_streak = 0
+        self._abort_action_terminal_seen = False
+        self._check_robot_ready()
+
+    @staticmethod
+    def _has_terminal_abort_action(states: List[Any]) -> bool:
+        for st in states:
+            if not isinstance(st, dict):
+                continue
+            a_type = str(st.get("actionType") or "").strip()
+            a_status = str(st.get("actionStatus") or "").strip()
+            if a_type in {"cancelOrder", "emergencyStop"} and a_status in {
+                "FINISHED",
+                "FAILED",
+            }:
+                return True
+        return False
 
     def _emit_mission_completed_and_clear(self) -> None:
         oid = self._active_order_id
@@ -236,12 +324,13 @@ class AppState(QObject):
         last_node_seq: int,
         nodes_remaining: int,
         driving: bool,
+        paused: bool,
     ) -> None:
         """Update from VDA5050 State; only affects UI when an order is tracked."""
         if self._active_order_id:
             logger.info(
                 f"[MissionProgress] oid={state_order_id!r} seq={last_node_seq} "
-                f"nodeStates={nodes_remaining} driving={driving} "
+                f"nodeStates={nodes_remaining} driving={driving} paused={paused} "
                 f"acked={self._order_acknowledged} seqValid={self._order_seq_valid} drove={self._saw_driving} "
                 f"tracked={self._active_order_id!r} total={self._total_nodes}"
             )
@@ -255,7 +344,34 @@ class AppState(QObject):
         if oid and oid != self._active_order_id:
             return
 
+        # Robot cleared orderId: either finished path, real cancel/estop, or transient blip.
+        if (
+            not oid
+            and self._order_acknowledged
+            and not driving
+            and not paused
+        ):
+            if self._saw_driving and self._last_completed_nodes >= self._total_nodes:
+                self._emit_mission_completed_and_clear()
+                return
+            if self._abort_action_terminal_seen:
+                self._clear_tracked_order()
+                self.mission_progress_changed.emit("idle", "", 0, 0, -1)
+                return
+            self._empty_order_streak += 1
+            if self._empty_order_streak < _EMPTY_ORDER_CLEAR_STREAK:
+                completed = max(0, min(total, self._last_completed_nodes))
+                map_idx = max(0, min(total - 1, completed - 1)) if completed > 0 else -1
+                self.mission_progress_changed.emit(
+                    "executing", self._active_order_id, completed, total, map_idx
+                )
+                return
+            self._clear_tracked_order()
+            self.mission_progress_changed.emit("idle", "", 0, 0, -1)
+            return
+
         if oid and oid == self._active_order_id:
+            self._empty_order_streak = 0
             self._order_acknowledged = True
             if driving:
                 self._saw_driving = True

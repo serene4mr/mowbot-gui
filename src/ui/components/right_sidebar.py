@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
     QProgressBar,
 )
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, QTimer
 
 from ui import theme
 
@@ -38,6 +38,14 @@ class RightSidebar(QFrame):
     execute_mission_requested = Signal()
     delete_mission_requested = Signal()
     load_mission_preview_requested = Signal()
+    cancel_order_requested = Signal()
+    pause_requested = Signal()
+    resume_requested = Signal()
+
+    _INSTANT_ACTION_TYPES = frozenset(
+        {"cancelOrder", "emergencyStop", "startPause", "stopPause"}
+    )
+    _ACTION_CLICK_DEBOUNCE_MS = 1500
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -45,7 +53,17 @@ class RightSidebar(QFrame):
         self._system_ready: bool = False
         self._mission_loaded: bool = False
         self._mission_executing: bool = False
+        self._robot_ready: bool = True
+        self._has_active_order: bool = False
+        self._robot_driving: bool = False
+        self._robot_paused: bool = False
+        self._robot_estop: str = "NONE"
+        self._action_locks: set[str] = set()
         self._docker_service_labels: Dict[str, QLabel] = {}
+        self._action_feedback_timer = QTimer(self)
+        self._action_feedback_timer.setSingleShot(True)
+        self._action_feedback_timer.setInterval(5000)
+        self._action_feedback_timer.timeout.connect(self._clear_action_feedback)
         self.setStyleSheet(theme.PANEL_STYLE)
         self._setup_ui()
         self._wire_signals()
@@ -195,6 +213,50 @@ class RightSidebar(QFrame):
 
         layout.addWidget(self.btn_execute)
 
+        status_row = QHBoxLayout()
+        self.lbl_driving_status = QLabel("STOPPED")
+        self.lbl_driving_status.setStyleSheet(
+            f"font-size: {theme.FONT_SM}px; color: {theme.TEXT_MUTED}; font-weight: bold;"
+        )
+        self.lbl_paused_badge = QLabel("PAUSED")
+        self.lbl_paused_badge.setStyleSheet(
+            f"font-size: {theme.FONT_SM}px; color: {theme.ACCENT_YELLOW}; font-weight: bold;"
+        )
+        self.lbl_paused_badge.hide()
+        self.lbl_estop_badge = QLabel("E-STOP")
+        self.lbl_estop_badge.setStyleSheet(
+            f"font-size: {theme.FONT_SM}px; color: {theme.ACCENT_RED}; font-weight: bold;"
+        )
+        self.lbl_estop_badge.hide()
+        status_row.addWidget(self.lbl_driving_status)
+        status_row.addStretch()
+        status_row.addWidget(self.lbl_paused_badge)
+        status_row.addWidget(self.lbl_estop_badge)
+        layout.addLayout(status_row)
+
+        ctrl_row = QHBoxLayout()
+        self.btn_cancel_order = QPushButton("CANCEL")
+        self.btn_cancel_order.setStyleSheet(
+            theme.action_button_style(bg=theme.ACCENT_RED, bold=True)
+        )
+        self.btn_pause_toggle = QPushButton("PAUSE")
+        self.btn_pause_toggle.setStyleSheet(
+            theme.action_button_style(bg=theme.ACCENT_YELLOW, bold=True)
+        )
+        for b in (self.btn_cancel_order, self.btn_pause_toggle):
+            b.setMinimumHeight(36)
+            b.setEnabled(False)
+        ctrl_row.addWidget(self.btn_cancel_order)
+        ctrl_row.addWidget(self.btn_pause_toggle)
+        layout.addLayout(ctrl_row)
+
+        self.lbl_action_feedback = QLabel("")
+        self.lbl_action_feedback.setWordWrap(True)
+        self.lbl_action_feedback.setStyleSheet(
+            f"font-size: {theme.FONT_XS}px; color: {theme.TEXT_MUTED}; padding: 4px 0;"
+        )
+        layout.addWidget(self.lbl_action_feedback)
+
         self.lbl_mission_heading = QLabel("MISSION PROGRESS")
         self.lbl_mission_heading.setStyleSheet(
             f"color: {theme.TEXT_MUTED}; font-size: {theme.FONT_XS}px; "
@@ -250,6 +312,59 @@ class RightSidebar(QFrame):
         self.btn_execute.clicked.connect(self.execute_mission_requested.emit)
         self.btn_delete_mission.clicked.connect(self.delete_mission_requested.emit)
         self.btn_load_mission.clicked.connect(self.load_mission_preview_requested.emit)
+        self.btn_cancel_order.clicked.connect(self._on_cancel_order_clicked)
+        self.btn_pause_toggle.clicked.connect(self._on_pause_toggle_clicked)
+
+    def _lock_action(self, action_type: str) -> None:
+        self._action_locks.add(action_type)
+        QTimer.singleShot(
+            self._ACTION_CLICK_DEBOUNCE_MS,
+            lambda t=action_type: self._unlock_action(t),
+        )
+
+    def _unlock_action(self, action_type: str) -> None:
+        self._action_locks.discard(action_type)
+        self.update_action_buttons(
+            self._has_active_order,
+            self._robot_paused,
+            self._robot_estop,
+            self._robot_driving,
+        )
+
+    def _is_action_locked(self, action_type: str) -> bool:
+        return action_type in self._action_locks
+
+    def _on_cancel_order_clicked(self) -> None:
+        if not self._has_active_order or self._is_action_locked("cancelOrder"):
+            return
+        self._lock_action("cancelOrder")
+        self.cancel_order_requested.emit()
+        self.update_action_buttons(
+            self._has_active_order,
+            self._robot_paused,
+            self._robot_estop,
+            self._robot_driving,
+        )
+
+    def _on_pause_toggle_clicked(self) -> None:
+        if not self._has_active_order:
+            return
+        if self._robot_paused:
+            if self._is_action_locked("stopPause"):
+                return
+            self._lock_action("stopPause")
+            self.resume_requested.emit()
+        else:
+            if self._is_action_locked("startPause"):
+                return
+            self._lock_action("startPause")
+            self.pause_requested.emit()
+        self.update_action_buttons(
+            self._has_active_order,
+            self._robot_paused,
+            self._robot_estop,
+            self._robot_driving,
+        )
 
     def _on_path_mode(self) -> None:
         self.btn_tch_path.setChecked(True)
@@ -342,7 +457,152 @@ class RightSidebar(QFrame):
         self._refresh_execute_enabled()
 
     def _refresh_execute_enabled(self) -> None:
-        self.btn_execute.setEnabled(self._mission_loaded and not self._mission_executing)
+        self.btn_execute.setEnabled(
+            self._mission_loaded
+            and not self._mission_executing
+            and self._robot_ready
+        )
+
+    def set_robot_ready(self, ready: bool) -> None:
+        self._robot_ready = bool(ready)
+        self._refresh_execute_enabled()
+
+    def update_robot_indicators(self, driving: bool, paused: bool, estop: str) -> None:
+        self._robot_driving = bool(driving)
+        self._robot_paused = bool(paused)
+        self._robot_estop = str(estop or "NONE").strip() or "NONE"
+        if self._robot_driving:
+            self.lbl_driving_status.setText("DRIVING")
+            self.lbl_driving_status.setStyleSheet(
+                f"font-size: {theme.FONT_SM}px; color: {theme.ACCENT_GREEN}; "
+                "font-weight: bold;"
+            )
+        else:
+            self.lbl_driving_status.setText("STOPPED")
+            self.lbl_driving_status.setStyleSheet(
+                f"font-size: {theme.FONT_SM}px; color: {theme.TEXT_MUTED}; "
+                "font-weight: bold;"
+            )
+        if self._robot_paused:
+            self.lbl_paused_badge.show()
+        else:
+            self.lbl_paused_badge.hide()
+        if self._robot_estop != "NONE":
+            self.lbl_estop_badge.show()
+        else:
+            self.lbl_estop_badge.hide()
+
+    def update_action_buttons(
+        self,
+        has_active_order: bool,
+        paused: bool,
+        estop: str,
+        _driving: bool,
+    ) -> None:
+        self._has_active_order = bool(has_active_order)
+        e = str(estop or "NONE").strip() or "NONE"
+        safe = e == "NONE"
+        can_control = self._mission_executing and self._has_active_order and safe
+        self.btn_cancel_order.setEnabled(
+            can_control and not self._is_action_locked("cancelOrder")
+        )
+        if paused:
+            self.btn_pause_toggle.setText("RESUME")
+            self.btn_pause_toggle.setStyleSheet(
+                theme.action_button_style(bg=theme.ACCENT_GREEN, bold=True)
+            )
+            self.btn_pause_toggle.setEnabled(
+                can_control and not self._is_action_locked("stopPause")
+            )
+        else:
+            self.btn_pause_toggle.setText("PAUSE")
+            self.btn_pause_toggle.setStyleSheet(
+                theme.action_button_style(bg=theme.ACCENT_YELLOW, bold=True)
+            )
+            self.btn_pause_toggle.setEnabled(
+                can_control and not self._is_action_locked("startPause")
+            )
+
+    @staticmethod
+    def _pick_instant_feedback(states: List[object]) -> Optional[dict]:
+        rel: List[dict] = []
+        for s in states or []:
+            if not isinstance(s, dict):
+                continue
+            t = str(s.get("actionType") or "").strip()
+            if t in RightSidebar._INSTANT_ACTION_TYPES:
+                rel.append(s)
+        for p in rel:
+            if p.get("actionStatus") == "FAILED":
+                return p
+        for p in rel:
+            if p.get("actionStatus") == "RUNNING":
+                return p
+        for p in reversed(rel):
+            if p.get("actionStatus") == "FINISHED":
+                return p
+        return None
+
+    def update_action_feedback(self, states: List[object]) -> None:
+        picked = self._pick_instant_feedback(states)
+        self._action_feedback_timer.stop()
+        if picked is None:
+            self._clear_action_feedback()
+            return
+        atype = str(picked.get("actionType") or "action")
+        status = str(picked.get("actionStatus") or "")
+        desc = picked.get("resultDescription")
+        desc_s = str(desc).strip() if desc else ""
+        if status == "RUNNING":
+            self._action_locks.add(atype)
+        elif status in {"FINISHED", "FAILED"}:
+            self._action_locks.discard(atype)
+        if status == "FAILED":
+            msg = f"{atype}: FAILED"
+            if desc_s:
+                msg = f"{msg} — {desc_s}"
+            self.lbl_action_feedback.setStyleSheet(
+                f"font-size: {theme.FONT_XS}px; color: {theme.ACCENT_RED}; "
+                "padding: 4px 0; font-weight: bold;"
+            )
+            self.lbl_action_feedback.setText(msg)
+            return
+        if status == "RUNNING":
+            self.lbl_action_feedback.setStyleSheet(
+                f"font-size: {theme.FONT_XS}px; color: {theme.ACCENT_YELLOW}; "
+                "padding: 4px 0;"
+            )
+            self.lbl_action_feedback.setText(f"{atype}: processing…")
+            return
+        if status == "FINISHED":
+            msg = f"{atype}: OK"
+            if desc_s:
+                msg = f"{msg} — {desc_s}"
+            self.lbl_action_feedback.setStyleSheet(
+                f"font-size: {theme.FONT_XS}px; color: {theme.ACCENT_GREEN}; "
+                "padding: 4px 0;"
+            )
+            self.lbl_action_feedback.setText(msg)
+            self._action_feedback_timer.start()
+            return
+        self.lbl_action_feedback.setText("")
+
+    def _clear_action_feedback(self) -> None:
+        self.lbl_action_feedback.setText("")
+        self.lbl_action_feedback.setStyleSheet(
+            f"font-size: {theme.FONT_XS}px; color: {theme.TEXT_MUTED}; padding: 4px 0;"
+        )
+
+    def refresh_robot_controls(
+        self,
+        has_active_order: bool,
+        driving: bool,
+        paused: bool,
+        estop: str,
+    ) -> None:
+        """Single entry point: indicators + instant-action button visibility."""
+        self.update_robot_indicators(driving, paused, estop)
+        self.update_action_buttons(has_active_order, paused, estop, driving)
 
     def update_mission_progress(
         self,
@@ -356,6 +616,12 @@ class RightSidebar(QFrame):
         st = (status or "idle").strip().lower()
         self._mission_executing = st == "executing"
         self._refresh_execute_enabled()
+        self.update_action_buttons(
+            self._has_active_order,
+            self._robot_paused,
+            self._robot_estop,
+            self._robot_driving,
+        )
         if st == "idle":
             self.lbl_mission_status.setText("IDLE")
             self.lbl_mission_status.setStyleSheet(

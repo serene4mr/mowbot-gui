@@ -8,7 +8,7 @@ import asyncio
 import math
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import QThread, Signal
 
@@ -24,8 +24,8 @@ class VDA5050BridgeThread(QThread):
     connection_status = Signal(bool)
     order_sent = Signal(bool, str, int)  # success, order_id or error detail, total_nodes (0 if fail)
     mission_progress = Signal(
-        str, int, str, int, int, bool
-    )  # orderId, orderUpdateId, lastNodeId, lastNodeSequenceId, len(nodeStates), driving
+        str, int, str, int, int, bool, bool
+    )  # orderId, orderUpdateId, lastNodeId, lastNodeSequenceId, len(nodeStates), driving, paused
     battery_updated = Signal(float)
     position_updated = Signal(float, float, float, float)  # x, y, theta_rad, speed
     mode_updated = Signal(str)
@@ -34,6 +34,8 @@ class VDA5050BridgeThread(QThread):
     sensor_diag_updated = Signal(str)
     error_updated = Signal(str)
     navigation_failed = Signal(str, str)  # description, hint
+    paused_updated = Signal(bool)
+    action_states_updated = Signal(list)  # list of dicts for UI
 
     def __init__(
         self,
@@ -52,6 +54,8 @@ class VDA5050BridgeThread(QThread):
         self._is_running = True
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._logged_first_state = False
+        # Last-sent instant action id per actionType (cleared on FINISHED/FAILED in state)
+        self._pending_action_ids: Dict[str, str] = {}
 
     # ── Thread entry / exit ───────────────────────────────────
 
@@ -160,6 +164,13 @@ class VDA5050BridgeThread(QThread):
         if state.safetyState:
             self.safety_updated.emit(state.safetyState.eStop.value)
 
+        paused = bool(state.paused) if state.paused is not None else False
+        self.paused_updated.emit(paused)
+
+        action_payloads = self._action_states_to_payloads(state.actionStates or [])
+        self._clear_pending_on_terminal(action_payloads)
+        self.action_states_updated.emit(action_payloads)
+
         if state.information:
             for info in state.information:
                 if (
@@ -196,17 +207,57 @@ class VDA5050BridgeThread(QThread):
             int(state.lastNodeSequenceId or 0),
             len(ns),
             bool(state.driving),
+            paused,
         )
 
     @staticmethod
     def _enum_name(value: object) -> str:
         return str(getattr(value, "value", value) or "").strip()
 
+    def _action_states_to_payloads(self, action_states: List[Any]) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for a in action_states:
+            out.append(
+                {
+                    "actionId": str(getattr(a, "actionId", "") or ""),
+                    "actionType": str(getattr(a, "actionType", "") or "") or None,
+                    "actionStatus": self._enum_name(getattr(a, "actionStatus", "")),
+                    "resultDescription": getattr(a, "resultDescription", None),
+                }
+            )
+        return out
+
+    def _clear_pending_on_terminal(self, payloads: List[Dict[str, Any]]) -> None:
+        terminal = {"FINISHED", "FAILED"}
+        for p in payloads:
+            if p.get("actionStatus") not in terminal:
+                continue
+            aid = p.get("actionId") or ""
+            if not aid:
+                continue
+            for k, v in list(self._pending_action_ids.items()):
+                if v == aid:
+                    del self._pending_action_ids[k]
+
+    def _schedule_instant_action(self, action_type: str, coro) -> None:
+        if self._loop and self.client:
+            asyncio.run_coroutine_threadsafe(coro, self._loop)
+        else:
+            logger.warning(f"[VDA Bridge] Cannot send {action_type}: MQTT not ready")
+
     # ── Commands (GUI → MQTT) ─────────────────────────────────
 
     def trigger_estop(self) -> None:
-        if self._loop and self.client:
-            asyncio.run_coroutine_threadsafe(self._send_estop(), self._loop)
+        self._schedule_instant_action("emergencyStop", self._send_estop())
+
+    def send_cancel_order(self) -> None:
+        self._schedule_instant_action("cancelOrder", self._send_instant("cancelOrder"))
+
+    def send_start_pause(self) -> None:
+        self._schedule_instant_action("startPause", self._send_instant("startPause"))
+
+    def send_stop_pause(self) -> None:
+        self._schedule_instant_action("stopPause", self._send_instant("stopPause"))
 
     def send_order(self, order: Order) -> None:
         if self._loop and self.client:
@@ -231,11 +282,12 @@ class VDA5050BridgeThread(QThread):
             logger.exception("[VDA Bridge] send_order failed")
             self.order_sent.emit(False, str(exc), 0)
 
-    async def _send_estop(self) -> None:
-        logger.warning("Initiating Emergency Stop sequence")
+    async def _send_instant(self, action_type: str) -> None:
+        action_id = str(uuid.uuid4())
+        self._pending_action_ids[action_type] = action_id
         action = Action(
-            actionType="emergencyStop",
-            actionId=str(uuid.uuid4()),
+            actionType=action_type,
+            actionId=action_id,
             blockingType=BlockingType.HARD,
             actionParameters=[],
         )
@@ -247,8 +299,41 @@ class VDA5050BridgeThread(QThread):
             serialNumber=self.serial_number,
             actions=[action],
         )
-        await self.client.send_instant_action(
-            target_manufacturer=self.manufacturer,
-            target_serial=self.serial_number,
-            action=msg,
+        try:
+            await self.client.send_instant_action(
+                target_manufacturer=self.manufacturer,
+                target_serial=self.serial_number,
+                action=msg,
+            )
+            logger.info(f"[VDA Bridge] Instant action sent: {action_type} id={action_id}")
+        except Exception:  # noqa: BLE001
+            logger.exception(f"[VDA Bridge] send_instant_action failed: {action_type}")
+            self._pending_action_ids.pop(action_type, None)
+
+    async def _send_estop(self) -> None:
+        logger.warning("Initiating Emergency Stop sequence")
+        action_id = str(uuid.uuid4())
+        self._pending_action_ids["emergencyStop"] = action_id
+        action = Action(
+            actionType="emergencyStop",
+            actionId=action_id,
+            blockingType=BlockingType.HARD,
+            actionParameters=[],
         )
+        msg = InstantActions(
+            headerId=int(datetime.now().timestamp()),
+            timestamp=datetime.now(timezone.utc),
+            version="2.1.0",
+            manufacturer=self.manufacturer,
+            serialNumber=self.serial_number,
+            actions=[action],
+        )
+        try:
+            await self.client.send_instant_action(
+                target_manufacturer=self.manufacturer,
+                target_serial=self.serial_number,
+                action=msg,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[VDA Bridge] emergencyStop send failed")
+            self._pending_action_ids.pop("emergencyStop", None)

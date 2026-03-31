@@ -50,6 +50,10 @@ class VDAController(QObject):
         self._bridge.battery_updated.connect(self._state.set_battery)
         self._bridge.position_updated.connect(self._state.set_position)
         self._bridge.mode_updated.connect(self._state.set_mode)
+        self._bridge.driving_status.connect(self._state.set_driving)
+        self._bridge.safety_updated.connect(self._state.set_estop)
+        self._bridge.paused_updated.connect(self._state.set_paused)
+        self._bridge.action_states_updated.connect(self._state.set_action_states)
         self._bridge.sensor_diag_updated.connect(self._state.set_sensor_diag)
         self._bridge.error_updated.connect(self._state.set_error)
         self._bridge.navigation_failed.connect(self._on_navigation_failed)
@@ -83,6 +87,18 @@ class VDAController(QObject):
     def trigger_estop(self) -> None:
         if self._bridge is not None:
             self._bridge.trigger_estop()
+
+    def send_cancel_order(self) -> None:
+        if self._bridge is not None:
+            self._bridge.send_cancel_order()
+
+    def send_start_pause(self) -> None:
+        if self._bridge is not None:
+            self._bridge.send_start_pause()
+
+    def send_stop_pause(self) -> None:
+        if self._bridge is not None:
+            self._bridge.send_stop_pause()
 
     def send_path_order(self, order: Order) -> None:
         if self._bridge is not None:
