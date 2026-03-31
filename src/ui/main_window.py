@@ -418,6 +418,12 @@ class MainWindow(QMainWindow):
         self._vda.send_stop_pause()
 
     def _on_tab_changed(self, index: int) -> None:
+        # Keep each mode visually clean: switching tabs drops map overlays.
+        self.map_view.clear_mission_preview()
+        self.map_view.clear_mission_progress_highlight()
+        self.map_view.clear_teach_layer()
+        self._mission_preview_filename = None
+        self.sidebar_panel.set_mission_loaded(False)
         if self._app_state.operating_mode is None:
             self.top_bar.set_mode(_MODE_LABELS[index])
 

@@ -462,6 +462,11 @@ class RightSidebar(QFrame):
             and not self._mission_executing
             and self._robot_ready
         )
+        can_manage_missions = not self._mission_executing
+        self.btn_load_mission.setEnabled(can_manage_missions and self.combo_mission.count() > 0)
+        self.btn_delete_mission.setEnabled(
+            can_manage_missions and self.combo_mission.count() > 0
+        )
 
     def set_robot_ready(self, ready: bool) -> None:
         self._robot_ready = bool(ready)
@@ -681,8 +686,7 @@ class RightSidebar(QFrame):
         self.combo_mission.clear()
         for name in names:
             self.combo_mission.addItem(name)
-        self.btn_delete_mission.setEnabled(len(names) > 0)
-        self.btn_load_mission.setEnabled(len(names) > 0)
+        self._refresh_execute_enabled()
 
     def current_mission_filename(self) -> Optional[str]:
         text = self.combo_mission.currentText().strip()
