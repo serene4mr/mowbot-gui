@@ -68,6 +68,8 @@
     </div>
     <script>
         const TRACK_ZOOM = 19;
+        const MAX_CLIENT_ZOOM = 22;
+        let userZoomOverride = false;
         // ROS2 ENU yaw (0=E, +CCW) -> screen/CSS rotation.
         const MOWBOT_ARROW_SVG =
             '<svg width="30" height="30" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 5 L90 90 L50 70 L10 90 L50 5 Z" fill="#00ff88" stroke="#ffffff" stroke-width="2"/></svg>';
@@ -79,12 +81,17 @@
             touchZoom: true,
             doubleClickZoom: true,
             boxZoom: true,
-            keyboard: true
+            keyboard: true,
+            maxZoom: MAX_CLIENT_ZOOM
         }).setView([36.11, 128.34], 17);
+        map.on('zoomstart', function () {
+            userZoomOverride = true;
+        });
 
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             attribution: '&copy; <a href="https://www.esri.com/">Esri</a>',
-            maxZoom: 19
+            maxNativeZoom: 19,
+            maxZoom: MAX_CLIENT_ZOOM
         }).addTo(map);
 
         console.log("Leaflet loaded ESRI Satellite tiles successfully (WebGL bypassed)!");
@@ -107,7 +114,11 @@
                     arrow.style.transform = `rotate(${markerHeading}rad)`;
                 }
             }
-            map.setView([lat, lng], TRACK_ZOOM, { animate: false });
+            if (!userZoomOverride) {
+                map.setView([lat, lng], TRACK_ZOOM, { animate: false });
+            } else {
+                map.panTo([lat, lng], { animate: false });
+            }
         }
 
         // ── Teach-in overlay (PATH: polyline only; POLY: filled polygon when ≥3 points) ─

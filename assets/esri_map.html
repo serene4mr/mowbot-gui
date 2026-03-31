@@ -71,6 +71,8 @@
 
     <script>
         var TRACK_ZOOM = 19;
+        var MAX_CLIENT_ZOOM = 22;
+        var userZoomOverride = false;
         // ROS2 ENU yaw (0=E, +CCW) -> screen/CSS rotation.
         var MOWBOT_ARROW_SVG =
             '<svg width="30" height="30" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
@@ -86,6 +88,7 @@
                         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
                     ],
                     tileSize: 256,
+                    maxzoom: 19,
                     attribution: '&copy; <a href="https://www.esri.com/">Esri</a>'
                 }
             },
@@ -99,7 +102,11 @@
             style: SATELLITE_STYLE,
             center: [128.34, 36.11],
             zoom: 17,
+            maxZoom: MAX_CLIENT_ZOOM,
             interactive: true
+        });
+        map.on('zoomstart', function () {
+            userZoomOverride = true;
         });
 
         map.on('load', function () {
@@ -131,7 +138,11 @@
                 }
             }
 
-            map.flyTo({ center: [lng, lat], zoom: TRACK_ZOOM, animate: false });
+            if (!userZoomOverride) {
+                map.flyTo({ center: [lng, lat], zoom: TRACK_ZOOM, animate: false });
+            } else {
+                map.panTo([lng, lat], { animate: false });
+            }
         }
 
         // Teach-in stubs (use MOWBOT_MAP_BACKEND=leaflet for full teach-in drawing)
