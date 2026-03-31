@@ -273,7 +273,7 @@ class AppState(QObject):
                     return
 
             last_idx = max(0, min(total - 1, last_node_seq // 2))
-            completed = last_idx
+            completed = last_idx + 1
             self._last_completed_nodes = completed
             if self._saw_driving and last_idx >= total - 1 and not driving:
                 self._emit_mission_completed_and_clear()
@@ -284,9 +284,13 @@ class AppState(QObject):
             )
             return
 
-        # Robot cleared orderId after finishing — only if it actually drove
+        # Robot cleared orderId after finishing — only trust this as genuine
+        # completion when the robot actually reached the last node.  A brief
+        # drive followed by an empty orderId (e.g. order re-queued or
+        # rejected) must not be mistaken for a completed mission.
         if not oid and not driving and self._saw_driving:
-            self._emit_mission_completed_and_clear()
+            if self._last_completed_nodes >= self._total_nodes:
+                self._emit_mission_completed_and_clear()
 
     def set_mission_failed(self, reason: str) -> None:
         """Latch active mission as failed; clear tracking after emitting UI state."""

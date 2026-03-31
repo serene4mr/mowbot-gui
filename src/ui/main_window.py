@@ -536,6 +536,8 @@ class MainWindow(QMainWindow):
             self._mission_clear_timer.start()
         elif st == "failed":
             self._mission_clear_timer.stop()
+            # Require operator to explicitly reload mission after a failure.
+            self.sidebar_panel.set_mission_loaded(False)
             if last_idx >= 0:
                 self.map_view.update_mission_progress(last_idx, False)
         else:
@@ -545,6 +547,7 @@ class MainWindow(QMainWindow):
         """Remove mission markers/overlay after completion (called by timer)."""
         self.map_view.clear_mission_preview()
         self._mission_preview_filename = None
+        self.sidebar_panel.set_mission_loaded(False)
         logger.info("Cleared mission overlay after completion")
 
     def _on_load_mission_preview(self) -> None:
@@ -585,6 +588,7 @@ class MainWindow(QMainWindow):
             self.map_view.load_mission_preview(typ, latlon)
             logger.info(f"Mission preview on map: {name} ({typ}, {len(coords)} pts)")
         self._mission_preview_filename = name
+        self.sidebar_panel.set_mission_loaded(True)
 
     def _on_delete_mission(self) -> None:
         name = self.sidebar_panel.current_mission_filename()
@@ -617,6 +621,7 @@ class MainWindow(QMainWindow):
         if self._mission_preview_filename == name:
             self.map_view.clear_mission_preview()
             self._mission_preview_filename = None
+            self.sidebar_panel.set_mission_loaded(False)
         self._refresh_mission_files()
         QMessageBox.information(self, "Delete mission", f"Deleted {name}.")
 

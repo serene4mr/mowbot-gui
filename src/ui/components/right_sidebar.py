@@ -43,6 +43,8 @@ class RightSidebar(QFrame):
         super().__init__(parent)
         self._tch_session_active: bool = False
         self._system_ready: bool = False
+        self._mission_loaded: bool = False
+        self._mission_executing: bool = False
         self._docker_service_labels: Dict[str, QLabel] = {}
         self.setStyleSheet(theme.PANEL_STYLE)
         self._setup_ui()
@@ -171,6 +173,7 @@ class RightSidebar(QFrame):
         )
 
         self.btn_execute = QPushButton("EXECUTE MISSION")
+        self.btn_execute.setEnabled(False)
         self.btn_execute.setStyleSheet(
             theme.primary_button_style(theme.BUTTON_EXECUTE) + " QPushButton { margin-top: 10px; }"
         )
@@ -334,6 +337,13 @@ class RightSidebar(QFrame):
             self.btn_auto.setText("AUTO-RECORD (OFF)")
             self.btn_auto.setStyleSheet(theme.action_button_style())
 
+    def set_mission_loaded(self, loaded: bool) -> None:
+        self._mission_loaded = loaded
+        self._refresh_execute_enabled()
+
+    def _refresh_execute_enabled(self) -> None:
+        self.btn_execute.setEnabled(self._mission_loaded and not self._mission_executing)
+
     def update_mission_progress(
         self,
         status: str,
@@ -344,6 +354,8 @@ class RightSidebar(QFrame):
     ) -> None:
         """Update RUN tab mission progress (idle / executing / completed / failed)."""
         st = (status or "idle").strip().lower()
+        self._mission_executing = st == "executing"
+        self._refresh_execute_enabled()
         if st == "idle":
             self.lbl_mission_status.setText("IDLE")
             self.lbl_mission_status.setStyleSheet(
