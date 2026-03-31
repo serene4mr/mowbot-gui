@@ -200,6 +200,7 @@ class AppState(QObject):
 
     def set_active_order(self, order_id: str, total_nodes: int) -> None:
         """Call after a PATH order is successfully dispatched."""
+        self._clear_tracked_order()
         self._active_order_id = (order_id or "").strip()
         try:
             self._total_nodes = max(0, int(total_nodes))
