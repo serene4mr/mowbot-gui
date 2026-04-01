@@ -9,6 +9,7 @@ print_help() {
     echo "  --help          Display this help message"
     echo "  -h              Display this help message"
     echo "  --platform      Specify the platform (default: current platform)"
+    echo "  --image-ref     Set full output image reference (registry/name:tag)"
     echo ""
     echo "Note: The --platform option should be one of 'linux/amd64' or 'linux/arm64'."
 }
@@ -28,6 +29,10 @@ parse_arguments() {
             option_platform="$2"
             shift
             ;;
+        --image-ref)
+            option_image_ref="$2"
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
             print_help
@@ -36,6 +41,16 @@ parse_arguments() {
         esac
         shift
     done
+}
+
+set_image_ref() {
+    if [ -n "$option_image_ref" ]; then
+        image_ref="$option_image_ref"
+    elif [ -n "$IMAGE_REF" ]; then
+        image_ref="$IMAGE_REF"
+    else
+        image_ref="ghcr.io/serene4mr/mowbot-gui:latest"
+    fi
 }
 
 # Set platform
@@ -122,7 +137,7 @@ build_images() {
         --platform="$platform" \
         --build-arg LIB_DIR="$lib_dir" \
         -f "$SCRIPT_DIR/Dockerfile" \
-        -t "ghcr.io/serene4mr/mowbot-gui:latest" \
+        -t "$image_ref" \
         "$WORKSPACE_ROOT"
     set +x
 }
@@ -136,6 +151,7 @@ remove_dangling_images() {
 parse_arguments "$@"
 set_platform
 set_arch_lib_dir
+set_image_ref
 install_packages
 build_images
 remove_dangling_images
