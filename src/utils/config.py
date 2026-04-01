@@ -82,6 +82,9 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
             ),
             "max_waypoints": _to_int_or_none(os.getenv("MOWBOT_COVERAGE_MAX_WAYPOINTS")),
         },
+        "docker_reset_on_startup": _to_bool_or_none(
+            os.getenv("MOWBOT_DOCKER_RESET_ON_STARTUP")
+        ),
     }
     config = deep_merge(config, _drop_nones_recursive(env_override))
 

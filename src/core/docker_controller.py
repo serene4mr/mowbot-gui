@@ -188,6 +188,7 @@ class DockerController(QObject):
         self._startup_sequence: List[SequenceStep] = self._parse_startup_sequence(
             config.get("docker_startup_sequence") or []
         )
+        self._reset_on_startup = self._parse_reset_on_startup(config)
         self._client: Optional[docker.DockerClient] = None
         self._available = False
         self._worker: Optional[DockerSequenceWorker] = None
@@ -247,6 +248,15 @@ class DockerController(QObject):
             steps.append(SequenceStep(key=key, settle_time_s=settle))
         return steps
 
+    @staticmethod
+    def _parse_reset_on_startup(config: Mapping[str, Any]) -> bool:
+        raw = config.get("docker_reset_on_startup", False)
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            return raw.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(raw)
+
     # ── Public accessors ─────────────────────────────────────
 
     def keys(self) -> List[str]:
@@ -274,6 +284,20 @@ class DockerController(QObject):
         if not self._startup_sequence:
             self._state.docker_sequence_finished.emit(False, "No startup sequence configured.")
             return
+        if self._reset_on_startup:
+            keys = self.keys()
+            if keys:
+                logger.info("[Docker] Reset-on-startup enabled: stopping configured services")
+                stop_result = self.stop(keys)
+                failures = [k for k, v in stop_result.items() if v == "error"]
+                if failures:
+                    detail = (
+                        "Failed reset-on-startup for: "
+                        + ", ".join(failures)
+                        + ". Check Docker logs and retry."
+                    )
+                    self._state.docker_sequence_finished.emit(False, detail)
+                    return
         self._worker = DockerSequenceWorker(
             self, self._startup_sequence, direction="start", parent=self
         )

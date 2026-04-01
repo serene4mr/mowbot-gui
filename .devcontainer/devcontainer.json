@@ -8,7 +8,7 @@
         },
         "options": [
             "-t", "mowbot_gui",
-            "--pull=false",
+            "--pull=true",
             "--build-arg", "BASE_IMAGE=ghcr.io/serene4mr/mowbot-gui:latest"
         ]
     },

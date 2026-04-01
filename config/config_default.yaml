@@ -56,3 +56,7 @@ docker_startup_sequence:
     settle_time_s: 3
   - key: app
     settle_time_s: 2
+
+# If true, stop all configured docker_containers keys before startup sequence.
+# This only affects containers listed in docker_containers (safe allowlist).
+docker_reset_on_startup: true
