@@ -34,6 +34,7 @@ coverage:
   overlap_pct: 10.0
   sweep_angle_deg: null  # null = align passes perpendicular to longest boundary edge
   max_waypoints: 2000
+  min_turn_radius_m: 0.0  # 0 = sharp turns (legacy); e.g. 0.5 for 50cm radius arcs at stripe ends
 
 docker_containers:
   bringup_and_sensing:
@@ -59,4 +60,4 @@ docker_startup_sequence:
 
 # If true, stop all configured docker_containers keys before startup sequence.
 # This only affects containers listed in docker_containers (safe allowlist).
-docker_reset_on_startup: true
+docker_reset_on_startup: false

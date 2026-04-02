@@ -81,6 +81,9 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
                 os.getenv("MOWBOT_COVERAGE_SWEEP_ANGLE_DEG")
             ),
             "max_waypoints": _to_int_or_none(os.getenv("MOWBOT_COVERAGE_MAX_WAYPOINTS")),
+            "min_turn_radius_m": _to_float_or_none(
+                os.getenv("MOWBOT_COVERAGE_MIN_TURN_RADIUS_M")
+            ),
         },
         "docker_reset_on_startup": _to_bool_or_none(
             os.getenv("MOWBOT_DOCKER_RESET_ON_STARTUP")

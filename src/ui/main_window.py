@@ -151,11 +151,16 @@ class MainWindow(QMainWindow):
             max_waypoints = int(c.get("max_waypoints", 2000))
         except (TypeError, ValueError):
             max_waypoints = 2000
+        try:
+            min_turn_radius_m = float(c.get("min_turn_radius_m", 0.0))
+        except (TypeError, ValueError):
+            min_turn_radius_m = 0.0
         return {
             "mow_width_m": mow_width_m,
             "overlap_pct": overlap_pct,
             "sweep_angle_deg": sweep_angle_deg,
             "max_waypoints": max_waypoints,
+            "min_turn_radius_m": min_turn_radius_m,
         }
 
     def _max_start_distance_m(self) -> float:
