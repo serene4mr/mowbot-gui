@@ -84,6 +84,9 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
             "min_turn_radius_m": _to_float_or_none(
                 os.getenv("MOWBOT_COVERAGE_MIN_TURN_RADIUS_M")
             ),
+            "stripe_point_spacing_m": _to_float_or_none(
+                os.getenv("MOWBOT_COVERAGE_STRIPE_POINT_SPACING_M")
+            ),
         },
         "docker_reset_on_startup": _to_bool_or_none(
             os.getenv("MOWBOT_DOCKER_RESET_ON_STARTUP")

@@ -159,6 +159,94 @@ def test_zero_radius_matches_legacy() -> None:
     assert path_default == path_zero
 
 
+def test_zero_stripe_spacing_matches_legacy() -> None:
+    """stripe_point_spacing_m=0 must match the default output exactly."""
+    sq = _square(38.1610, -122.4540, 14.0)
+
+    path_default, err1 = compute_coverage_path(
+        sq,
+        robot_position=sq[0],
+        mow_width_m=3.0,
+        overlap_pct=0.0,
+        max_waypoints=5000,
+    )
+    assert err1 is None
+
+    path_zero_spacing, err2 = compute_coverage_path(
+        sq,
+        robot_position=sq[0],
+        mow_width_m=3.0,
+        overlap_pct=0.0,
+        max_waypoints=5000,
+        stripe_point_spacing_m=0.0,
+    )
+    assert err2 is None
+    assert path_default == path_zero_spacing
+
+
+def test_stripe_spacing_adds_interior_points_and_limits_gap() -> None:
+    """Spacing>0 should add interior stripe points and cap point-to-point gap."""
+    from utils.geometry import haversine_distance_m
+
+    sq = _square(38.0, -122.0, 20.0)
+    spacing_m = 1.0
+
+    sparse_path, err_sparse = compute_coverage_path(
+        sq,
+        mow_width_m=4.0,
+        overlap_pct=0.0,
+        max_waypoints=10000,
+        stripe_point_spacing_m=0.0,
+    )
+    assert err_sparse is None
+
+    dense_path, err_dense = compute_coverage_path(
+        sq,
+        mow_width_m=4.0,
+        overlap_pct=0.0,
+        max_waypoints=10000,
+        stripe_point_spacing_m=spacing_m,
+    )
+    assert err_dense is None
+    assert len(dense_path) > len(sparse_path)
+
+    max_gap = 0.0
+    for i in range(1, len(dense_path)):
+        gap = haversine_distance_m(dense_path[i - 1], dense_path[i])
+        if gap > max_gap:
+            max_gap = gap
+
+    # Allow a modest tolerance because transitions between stripes may exceed
+    # exact spacing and lat/lon projection introduces small numeric jitter.
+    assert max_gap <= 1.6, f"Expected max gap <= 1.6m, got {max_gap:.2f}m"
+
+
+def test_stripe_spacing_works_with_smooth_turns() -> None:
+    """Densified stripes and smooth U-turn arcs should combine correctly."""
+    sq = _square(38.0, -122.0, 20.0)
+
+    path_arc_only, err_arc_only = compute_coverage_path(
+        sq,
+        mow_width_m=4.0,
+        overlap_pct=0.0,
+        max_waypoints=10000,
+        min_turn_radius_m=1.0,
+        stripe_point_spacing_m=0.0,
+    )
+    assert err_arc_only is None
+
+    path_arc_dense, err_arc_dense = compute_coverage_path(
+        sq,
+        mow_width_m=4.0,
+        overlap_pct=0.0,
+        max_waypoints=10000,
+        min_turn_radius_m=1.0,
+        stripe_point_spacing_m=1.0,
+    )
+    assert err_arc_dense is None
+    assert len(path_arc_dense) > len(path_arc_only)
+
+
 def test_bulb_turn_when_step_less_than_diameter() -> None:
     """When stripe spacing < 2 × radius the arc becomes a bulb turn that
     may extend outside the polygon.  The path should still be valid and

@@ -46,6 +46,34 @@ def _dedupe_xy_path(path: List[Tuple[float, float]], eps_m: float = 0.02) -> Lis
     return out
 
 
+def _interpolate_segment_points(
+    p0: Tuple[float, float],
+    p1: Tuple[float, float],
+    spacing_m: float,
+) -> List[Tuple[float, float]]:
+    """Return interior points along p0->p1 at approximately spacing_m."""
+    if spacing_m <= 0:
+        return []
+    x0, y0 = p0
+    x1, y1 = p1
+    dx = x1 - x0
+    dy = y1 - y0
+    seg_len = math.hypot(dx, dy)
+    if seg_len <= spacing_m:
+        return []
+    count = int(seg_len // spacing_m)
+    if count <= 0:
+        return []
+    out: List[Tuple[float, float]] = []
+    for i in range(1, count + 1):
+        d = spacing_m * i
+        if d >= seg_len:
+            break
+        t = d / seg_len
+        out.append((x0 + dx * t, y0 + dy * t))
+    return out
+
+
 def _linestring_parts(geom) -> List[LineString]:
     if geom is None or geom.is_empty:
         return []
@@ -251,6 +279,7 @@ def compute_coverage_path(
     sweep_angle_deg: Optional[float] = None,
     max_waypoints: int = 2000,
     min_turn_radius_m: float = 0.0,
+    stripe_point_spacing_m: float = 0.0,
 ) -> Tuple[List[Pair], Optional[str]]:
     """Plan a boustrophedon path inside polygon (lat/lon), in visiting order.
 
@@ -299,6 +328,7 @@ def compute_coverage_path(
     step = max(_MIN_STEP_M, float(mow_width_m) * (1.0 - max(0.0, min(100.0, overlap_pct)) / 100.0))
 
     turn_radius = max(0.0, float(min_turn_radius_m))
+    stripe_spacing = max(0.0, float(stripe_point_spacing_m))
 
     path_rot: List[Tuple[float, float]] = []
     row = 0
@@ -340,13 +370,21 @@ def compute_coverage_path(
                             ):
                                 path_rot.append(ap)
                     path_rot.append((fx, fy))
-            for c in coords:
+            for i, c in enumerate(coords):
                 if (
                     not path_rot
                     or (c[0] - path_rot[-1][0]) ** 2 + (c[1] - path_rot[-1][1]) ** 2
                     > _MIN_COORD_EPS_M2
                 ):
                     path_rot.append(c)
+                if i + 1 < len(coords):
+                    for ip in _interpolate_segment_points(c, coords[i + 1], stripe_spacing):
+                        if (
+                            (ip[0] - path_rot[-1][0]) ** 2
+                            + (ip[1] - path_rot[-1][1]) ** 2
+                            > _MIN_COORD_EPS_M2
+                        ):
+                            path_rot.append(ip)
         row += 1
         y += step
 

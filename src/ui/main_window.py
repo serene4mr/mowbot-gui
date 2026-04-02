@@ -11,6 +11,7 @@ All state formatting lives in AppState.
 
 from __future__ import annotations
 
+import math
 import json
 import os
 import time
@@ -25,7 +26,7 @@ from core.docker_controller import DockerController
 from core.mission_builder import build_path_order
 from core.vda_controller import VDAController
 from utils.coverage import compute_coverage_path
-from utils.geometry import haversine_distance_m
+from utils.geometry import haversine_distance_m, latlon_to_xy_m
 from ui.components.map_view import MapView
 from ui.components.top_bar import TopBar
 from ui.components.left_hud import LeftHUD
@@ -39,6 +40,42 @@ _MODE_LABELS = ("MODE: SYSTEM SETUP", "MODE: TEACH-IN", "MODE: AUTO-RUN")
 _AUTO_RECORD_INTERVAL_MS = 2000
 _AUTO_RECORD_MIN_DISTANCE_M = 2.0
 _AUTO_RECORD_MIN_INTERVAL_S = 1.0
+
+
+def _with_tangent_theta(path_latlon: List[Tuple[float, float]]) -> List[Tuple[float, float, float]]:
+    """Attach tangent-to-next-waypoint heading (radians) to each waypoint."""
+    n = len(path_latlon)
+    if n == 0:
+        return []
+    if n == 1:
+        lat, lon = path_latlon[0]
+        return [(lat, lon, 0.0)]
+
+    ref = path_latlon[0]
+    out: List[Tuple[float, float, float]] = []
+    last_theta = 0.0
+
+    for i in range(n):
+        lat, lon = path_latlon[i]
+        theta: Optional[float] = None
+
+        # Look ahead for the first non-degenerate segment.
+        for j in range(i + 1, n):
+            x0, y0 = latlon_to_xy_m(lat, lon, ref)
+            x1, y1 = latlon_to_xy_m(path_latlon[j][0], path_latlon[j][1], ref)
+            dx = x1 - x0
+            dy = y1 - y0
+            if dx * dx + dy * dy > 1e-8:
+                theta = math.atan2(dy, dx)
+                break
+
+        if theta is None:
+            theta = last_theta
+        else:
+            last_theta = theta
+        out.append((lat, lon, theta))
+
+    return out
 
 
 class MainWindow(QMainWindow):
@@ -155,12 +192,17 @@ class MainWindow(QMainWindow):
             min_turn_radius_m = float(c.get("min_turn_radius_m", 0.0))
         except (TypeError, ValueError):
             min_turn_radius_m = 0.0
+        try:
+            stripe_point_spacing_m = float(c.get("stripe_point_spacing_m", 0.0))
+        except (TypeError, ValueError):
+            stripe_point_spacing_m = 0.0
         return {
             "mow_width_m": mow_width_m,
             "overlap_pct": overlap_pct,
             "sweep_angle_deg": sweep_angle_deg,
             "max_waypoints": max_waypoints,
             "min_turn_radius_m": min_turn_radius_m,
+            "stripe_point_spacing_m": stripe_point_spacing_m,
         }
 
     def _max_start_distance_m(self) -> float:
@@ -526,7 +568,8 @@ class MainWindow(QMainWindow):
             if cerr:
                 QMessageBox.warning(self, "Execute mission", cerr)
                 return
-            exec_coords = [(lat, lon, 0.0) for lat, lon in path_wps]
+            # Use tangent heading (radians) for each generated coverage waypoint.
+            exec_coords = _with_tangent_theta(path_wps)
             self.map_view.load_poly_coverage_preview(latlon, path_wps)
         else:
             self.map_view.load_mission_preview(typ, latlon)

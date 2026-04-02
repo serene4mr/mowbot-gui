@@ -35,6 +35,7 @@ coverage:
   sweep_angle_deg: null  # null = align passes perpendicular to longest boundary edge
   max_waypoints: 2000
   min_turn_radius_m: 0.0  # 0 = sharp turns (legacy); e.g. 0.5 for 50cm radius arcs at stripe ends
+  stripe_point_spacing_m: 1.0  # 0 disables stripe densification; e.g. 0.75 for interior points every 75cm
 
 docker_containers:
   bringup_and_sensing:
