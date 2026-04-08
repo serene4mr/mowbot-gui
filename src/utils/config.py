@@ -16,8 +16,8 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
     Loads and merges config layers (lowest → highest priority):
     1. config/config_default.yaml   (committed defaults)
     2. config/config_local.yaml     (gitignored user overrides)
-    3. --config / MOWBOT_GUI_CONFIG (external file override)
-    4. MOWBOT_* environment variables
+    3. --config / MBGUI_GUI_CONFIG (external file override)
+    4. MBGUI_* environment variables
     """
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     default_path = os.path.join(base_dir, "config", "config_default.yaml")
@@ -39,8 +39,8 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
             local_config = yaml.safe_load(f) or {}
             config = deep_merge(config, local_config)
 
-    # 3. External config file (--config flag > MOWBOT_GUI_CONFIG env var)
-    ext_path = config_path or os.getenv("MOWBOT_GUI_CONFIG")
+    # 3. External config file (--config flag > MBGUI_GUI_CONFIG env var)
+    ext_path = config_path or os.getenv("MBGUI_GUI_CONFIG")
     if ext_path:
         ext_path = os.path.expanduser(ext_path)
         if not os.path.isfile(ext_path):
@@ -52,44 +52,44 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
     # 4. Environment Variable Overrides (highest priority)
     env_override = {
         "general": {
-            "manufacturer": os.getenv("MOWBOT_MANUFACTURER"),
-            "serial_number": os.getenv("MOWBOT_SERIAL_NUMBER"),
-            "map_id": os.getenv("MOWBOT_MAP_ID"),
+            "manufacturer": os.getenv("MBGUI_MANUFACTURER"),
+            "serial_number": os.getenv("MBGUI_SERIAL_NUMBER"),
+            "map_id": os.getenv("MBGUI_MAP_ID"),
         },
         "broker": {
-            "host": os.getenv("MOWBOT_MQTT_HOST"),
-            "port": _to_int_or_none(os.getenv("MOWBOT_MQTT_PORT")),
-            "use_tls": _to_bool_or_none(os.getenv("MOWBOT_MQTT_USE_TLS")),
-            "user": os.getenv("MOWBOT_MQTT_USER"),
-            "password": os.getenv("MOWBOT_MQTT_PASSWORD"),
+            "host": os.getenv("MBGUI_MQTT_HOST"),
+            "port": _to_int_or_none(os.getenv("MBGUI_MQTT_PORT")),
+            "use_tls": _to_bool_or_none(os.getenv("MBGUI_MQTT_USE_TLS")),
+            "user": os.getenv("MBGUI_MQTT_USER"),
+            "password": os.getenv("MBGUI_MQTT_PASSWORD"),
         },
         "teach_in": {
             "poly_max_close_gap_m": _to_float_or_none(
-                os.getenv("MOWBOT_TEACH_POLY_MAX_CLOSE_GAP_M")
+                os.getenv("MBGUI_TEACH_POLY_MAX_CLOSE_GAP_M")
             ),
             "poly_min_area_m2": _to_float_or_none(
-                os.getenv("MOWBOT_TEACH_POLY_MIN_AREA_M2")
+                os.getenv("MBGUI_TEACH_POLY_MIN_AREA_M2")
             ),
             "poly_reject_self_intersection": _to_bool_or_none(
-                os.getenv("MOWBOT_TEACH_POLY_REJECT_SELF_INTERSECTION")
+                os.getenv("MBGUI_TEACH_POLY_REJECT_SELF_INTERSECTION")
             ),
         },
         "coverage": {
-            "mow_width_m": _to_float_or_none(os.getenv("MOWBOT_COVERAGE_MOW_WIDTH_M")),
-            "overlap_pct": _to_float_or_none(os.getenv("MOWBOT_COVERAGE_OVERLAP_PCT")),
+            "mow_width_m": _to_float_or_none(os.getenv("MBGUI_COVERAGE_MOW_WIDTH_M")),
+            "overlap_pct": _to_float_or_none(os.getenv("MBGUI_COVERAGE_OVERLAP_PCT")),
             "sweep_angle_deg": _to_float_or_none(
-                os.getenv("MOWBOT_COVERAGE_SWEEP_ANGLE_DEG")
+                os.getenv("MBGUI_COVERAGE_SWEEP_ANGLE_DEG")
             ),
-            "max_waypoints": _to_int_or_none(os.getenv("MOWBOT_COVERAGE_MAX_WAYPOINTS")),
+            "max_waypoints": _to_int_or_none(os.getenv("MBGUI_COVERAGE_MAX_WAYPOINTS")),
             "min_turn_radius_m": _to_float_or_none(
-                os.getenv("MOWBOT_COVERAGE_MIN_TURN_RADIUS_M")
+                os.getenv("MBGUI_COVERAGE_MIN_TURN_RADIUS_M")
             ),
             "stripe_point_spacing_m": _to_float_or_none(
-                os.getenv("MOWBOT_COVERAGE_STRIPE_POINT_SPACING_M")
+                os.getenv("MBGUI_COVERAGE_STRIPE_POINT_SPACING_M")
             ),
         },
         "docker_reset_on_startup": _to_bool_or_none(
-            os.getenv("MOWBOT_DOCKER_RESET_ON_STARTUP")
+            os.getenv("MBGUI_DOCKER_RESET_ON_STARTUP")
         ),
     }
     config = deep_merge(config, _drop_nones_recursive(env_override))

@@ -8,7 +8,7 @@ general:
 # MQTT Broker Settings
 # Note: In production, these are often overridden by encrypted DB or Env Vars
 broker:
-  host: "localhost"           # Deploy: broker on same machine. LAN lab test: override via config_local.yaml or MOWBOT_MQTT_HOST
+  host: "localhost"           # Deploy: broker on same machine. LAN lab test: override via config_local.yaml or MBGUI_MQTT_HOST
   port: 1883                  # MQTT broker port (8883 for HiveMQ TLS)
   use_tls: false              # Set to true for HiveMQ Cloud
   user: ""                    # MQTT username

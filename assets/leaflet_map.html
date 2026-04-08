@@ -71,7 +71,7 @@
         const MAX_CLIENT_ZOOM = 22;
         let userZoomOverride = false;
         // ROS2 ENU yaw (0=E, +CCW) -> screen/CSS rotation.
-        const MOWBOT_ARROW_SVG =
+        const MBGUI_ARROW_SVG =
             '<svg width="30" height="30" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 5 L90 90 L50 70 L10 90 L50 5 Z" fill="#00ff88" stroke="#ffffff" stroke-width="2"/></svg>';
 
         var map = L.map('map', {
@@ -102,7 +102,7 @@
             if (!robotMarker) {
                 const icon = L.divIcon({
                     className: 'mowbot-arrow-icon',
-                    html: `<div id="mowbot-arrow" style="width:30px;height:30px;transform: rotate(${markerHeading}rad);transform-origin: 50% 50%;">${MOWBOT_ARROW_SVG}</div>`,
+                    html: `<div id="mowbot-arrow" style="width:30px;height:30px;transform: rotate(${markerHeading}rad);transform-origin: 50% 50%;">${MBGUI_ARROW_SVG}</div>`,
                     iconSize: [30, 30],
                     iconAnchor: [15, 15],
                 });

@@ -11,7 +11,7 @@ os.environ.setdefault("QSG_RHI_BACKEND", "opengl")
 os.environ.setdefault("QT_OPENGL", "software")
 # QWebEngine / MapLibre: WebGL. If you see "Could not create a WebGL context" / libGL errors,
 # (1) try SwiftShader (software WebGL) via flags below, or (2) use raster map only:
-#     MOWBOT_MAP_BACKEND=leaflet python src/main.py
+#     MBGUI_MAP_BACKEND=leaflet python src/main.py
 # Override anytime: QTWEBENGINE_CHROMIUM_FLAGS="..."
 os.environ.setdefault(
     "QTWEBENGINE_CHROMIUM_FLAGS",
@@ -41,7 +41,7 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Path to a YAML config file. Merged on top of defaults "
             "(overrides config_local.yaml). Also settable via "
-            "MOWBOT_GUI_CONFIG env var."
+            "MBGUI_GUI_CONFIG env var."
         ),
     )
     return parser.parse_args()

@@ -1,6 +1,6 @@
 """Map surface: WebEngine + JS bridge for robot marker / path rendering.
 
-Supports two backends (selected via MOWBOT_MAP_BACKEND env var):
+Supports two backends (selected via MBGUI_MAP_BACKEND env var):
   - "leaflet" (default): raster tiles, no WebGL required
   - "esri" / "maplibre"   : MapLibre GL JS, requires WebGL context
 """
@@ -43,11 +43,11 @@ class MapView(QWebEngineView):
         current_dir = os.path.dirname(os.path.abspath(__file__))
         assets_dir = os.path.abspath(os.path.join(current_dir, "../../../assets"))
 
-        override = os.environ.get("MOWBOT_MAP_HTML", "").strip()
+        override = os.environ.get("MBGUI_MAP_HTML", "").strip()
         if override:
             return os.path.join(assets_dir, override)
 
-        backend = os.environ.get("MOWBOT_MAP_BACKEND", "leaflet").strip().lower()
+        backend = os.environ.get("MBGUI_MAP_BACKEND", "leaflet").strip().lower()
         name = (
             "leaflet_map.html"
             if backend in ("leaflet", "raster", "no-webgl")
@@ -73,7 +73,7 @@ class MapView(QWebEngineView):
         if html_path.endswith("esri_map.html"):
             logger.info(
                 "   (MapLibre/WebGL). If tiles stay blank, try: "
-                "MOWBOT_MAP_BACKEND=leaflet"
+                "MBGUI_MAP_BACKEND=leaflet"
             )
 
         self.load(QUrl.fromLocalFile(html_path))

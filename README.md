@@ -31,7 +31,7 @@ Config is merged from `config/config_default.yaml`, optional `config/config_loca
 Default deploy uses **`localhost:1883`**. To point at a broker on another host (e.g. `192.168.1.9` during testing):
 
 ```bash
-MOWBOT_MQTT_HOST=192.168.1.9 cd src && python main.py
+MBGUI_MQTT_HOST=192.168.1.9 cd src && python main.py
 ```
 
 Or create `config/config_local.yaml`:
@@ -46,6 +46,6 @@ broker:
 ### MQTT shows OK but telemetry / BAT stay `--`
 
 - **Serial** in config must match the topic segment (case-insensitive after the fix). Example: `uagv/v2/MowbotTech/mowbot_001/state` → `serial_number: "mowbot_001"`.
-- **Position** is only sent if `state.agvPosition` exists. If your AGV leaves `positionInitialized: false`, the bridge still updates when **`MOWBOT_RELAX_POSITION_INITIALIZED`** is enabled (default **`1`** / on). Set to **`0`** to require a true initialized flag.
+- **Position** is only sent if `state.agvPosition` exists. If your AGV leaves `positionInitialized: false`, the bridge still updates when **`MBGUI_RELAX_POSITION_INITIALIZED`** is enabled (default **`1`** / on). Set to **`0`** to require a true initialized flag.
 - **Theta** is converted from **radians (VDA)** to **degrees** for the HUD.
 - **Speed** uses planar speed from `state.velocity` vx/vy (m/s) when present.
