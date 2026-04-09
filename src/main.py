@@ -41,7 +41,7 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Path to a YAML config file. Merged on top of defaults "
             "(overrides config_local.yaml). Also settable via "
-            "MBGUI_GUI_CONFIG env var."
+            "MBGUI_CONFIG env var."
         ),
     )
     return parser.parse_args()

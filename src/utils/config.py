@@ -16,7 +16,7 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
     Loads and merges config layers (lowest → highest priority):
     1. config/config_default.yaml   (committed defaults)
     2. config/config_local.yaml     (gitignored user overrides)
-    3. --config / MBGUI_GUI_CONFIG (external file override)
+    3. --config / MBGUI_CONFIG (external file override)
     4. MBGUI_* environment variables
     """
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
@@ -39,8 +39,8 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
             local_config = yaml.safe_load(f) or {}
             config = deep_merge(config, local_config)
 
-    # 3. External config file (--config flag > MBGUI_GUI_CONFIG env var)
-    ext_path = config_path or os.getenv("MBGUI_GUI_CONFIG")
+    # 3. External config file (--config flag > MBGUI_CONFIG env var)
+    ext_path = config_path or os.getenv("MBGUI_CONFIG")
     if ext_path:
         ext_path = os.path.expanduser(ext_path)
         if not os.path.isfile(ext_path):

@@ -15,6 +15,6 @@ MBGUI_MQTT_HOST=172.17.10.1 python src/main.py
 
 python src/main.py --config /path/to/gui_config.yaml
 # or
-MBGUI_GUI_CONFIG=/path/to/gui_config.yaml python src/main.py
+MBGUI_CONFIG=/path/to/gui_config.yaml python src/main.py
 
-DISPLAY=:0 MBGUI_GUI_CONFIG=/workspaces/mowbot-gui/mowbot_data/gui/config.yaml python src/main.py
+DISPLAY=:0 MBGUI_CONFIG=/workspaces/mowbot-gui/mowbot_data/gui/config.yaml python src/main.py
