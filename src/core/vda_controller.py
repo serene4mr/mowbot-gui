@@ -55,6 +55,7 @@ class VDAController(QObject):
         self._bridge.paused_updated.connect(self._state.set_paused)
         self._bridge.action_states_updated.connect(self._state.set_action_states)
         self._bridge.sensor_diag_updated.connect(self._state.set_sensor_diag)
+        self._bridge.sensor_health_updated.connect(self._state.set_sensor_health)
         self._bridge.error_updated.connect(self._state.set_error)
         self._bridge.navigation_failed.connect(self._on_navigation_failed)
         self._bridge.order_sent.connect(self._forward_order_result)

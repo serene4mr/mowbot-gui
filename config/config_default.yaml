@@ -27,6 +27,14 @@ teach_in:
   poly_max_close_gap_m: 5.0
   poly_min_area_m2: 0.0
   poly_reject_self_intersection: true
+  recording:
+    sample_interval_s: 2.0  # fixed-interval logging cadence during AUTO-RECORD
+  post_process:
+    enable: true
+    min_dist_m: 0.2
+    corner_threshold_deg: 15.0
+    rdp_epsilon_path_m: 0.2
+    rdp_epsilon_poly_m: 0.15
 
 # POLY → coverage path (boustrophedon sweep; preview + execute)
 coverage:

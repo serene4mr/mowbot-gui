@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 import json
 import os
-import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from PySide6.QtWidgets import QMainWindow, QMessageBox
@@ -38,8 +38,6 @@ _MODE_LABELS = ("MODE: SYSTEM SETUP", "MODE: TEACH-IN", "MODE: AUTO-RUN")
 
 # Auto-record: time interval (ms) and minimum travel (m) since last waypoint
 _AUTO_RECORD_INTERVAL_MS = 2000
-_AUTO_RECORD_MIN_DISTANCE_M = 2.0
-_AUTO_RECORD_MIN_INTERVAL_S = 1.0
 
 
 def _with_tangent_theta(path_latlon: List[Tuple[float, float]]) -> List[Tuple[float, float, float]]:
@@ -87,9 +85,8 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self.setStyleSheet(theme.MAIN_WINDOW_STYLE)
 
-        self._last_auto_distance_log_mono: float = 0.0
         self._mission_preview_filename: Optional[str] = None
-        self._latest_status_line: str = "GPS: FIX  |  BAT: --  |  MQTT: OFF"
+        self._latest_status_line: str = "BAT: --"
         self._error_active: bool = False
 
         self._app_state = AppState(
@@ -97,6 +94,11 @@ class MainWindow(QMainWindow):
             poly_max_close_gap_m=self._teach_poly_max_close_gap_m(),
             poly_min_area_m2=self._teach_poly_min_area_m2(),
             poly_reject_self_intersection=self._teach_poly_reject_self_intersection(),
+            post_process_enable=self._teach_postprocess_enable(),
+            post_process_min_dist_m=self._teach_postprocess_min_dist_m(),
+            post_process_corner_threshold_deg=self._teach_postprocess_corner_deg(),
+            post_process_rdp_epsilon_path_m=self._teach_postprocess_rdp_path_m(),
+            post_process_rdp_epsilon_poly_m=self._teach_postprocess_rdp_poly_m(),
         )
 
         # Layer 1: full-screen map background
@@ -109,8 +111,13 @@ class MainWindow(QMainWindow):
         self.sidebar_panel = RightSidebar(self)
 
         self._auto_record_timer = QTimer(self)
-        self._auto_record_timer.setInterval(_AUTO_RECORD_INTERVAL_MS)
+        self._auto_record_timer.setInterval(self._teach_record_sample_interval_ms())
         self._auto_record_timer.timeout.connect(self._on_auto_record_tick)
+
+        self._clock_timer = QTimer(self)
+        self._clock_timer.setInterval(1000)
+        self._clock_timer.timeout.connect(self._refresh_topbar_clock)
+        self._clock_timer.start()
 
         self._mission_clear_timer = QTimer(self)
         self._mission_clear_timer.setSingleShot(True)
@@ -166,6 +173,61 @@ class MainWindow(QMainWindow):
         if isinstance(raw, bool):
             return raw
         return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _teach_record_sample_interval_ms(self) -> int:
+        t = self.config.get("teach_in") or {}
+        rec = t.get("recording") or {}
+        raw = rec.get("sample_interval_s")
+        try:
+            sec = float(raw) if raw is not None else (_AUTO_RECORD_INTERVAL_MS / 1000.0)
+        except (TypeError, ValueError):
+            sec = _AUTO_RECORD_INTERVAL_MS / 1000.0
+        sec = max(0.2, sec)
+        return int(round(sec * 1000.0))
+
+    def _teach_postprocess_enable(self) -> bool:
+        t = self.config.get("teach_in") or {}
+        pp = t.get("post_process") or {}
+        raw = pp.get("enable", True)
+        if isinstance(raw, bool):
+            return raw
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _teach_postprocess_min_dist_m(self) -> float:
+        t = self.config.get("teach_in") or {}
+        pp = t.get("post_process") or {}
+        raw = pp.get("min_dist_m", 0.2)
+        try:
+            return max(0.0, float(raw))
+        except (TypeError, ValueError):
+            return 0.2
+
+    def _teach_postprocess_corner_deg(self) -> float:
+        t = self.config.get("teach_in") or {}
+        pp = t.get("post_process") or {}
+        raw = pp.get("corner_threshold_deg", 15.0)
+        try:
+            return max(0.0, float(raw))
+        except (TypeError, ValueError):
+            return 15.0
+
+    def _teach_postprocess_rdp_path_m(self) -> float:
+        t = self.config.get("teach_in") or {}
+        pp = t.get("post_process") or {}
+        raw = pp.get("rdp_epsilon_path_m", 0.2)
+        try:
+            return max(0.0, float(raw))
+        except (TypeError, ValueError):
+            return 0.2
+
+    def _teach_postprocess_rdp_poly_m(self) -> float:
+        t = self.config.get("teach_in") or {}
+        pp = t.get("post_process") or {}
+        raw = pp.get("rdp_epsilon_poly_m", 0.15)
+        try:
+            return max(0.0, float(raw))
+        except (TypeError, ValueError):
+            return 0.15
 
     def _coverage_params(self) -> dict:
         c = self.config.get("coverage") or {}
@@ -289,8 +351,8 @@ class MainWindow(QMainWindow):
         s.status_line_changed.connect(self._on_status_line)
         s.mode_changed.connect(lambda m: self.top_bar.set_mode(f"MODE: {m}"))
         s.position_changed.connect(self.hud_panel.update_telemetry)
+        s.sensor_health_changed.connect(self.hud_panel.update_sensor_health)
         s.position_changed.connect(self._update_map_marker)
-        s.position_changed.connect(self._maybe_auto_record_on_distance)
         s.robot_id_changed.connect(self.top_bar.set_robot_id)
         s.error_changed.connect(self._on_error)
 
@@ -323,16 +385,20 @@ class MainWindow(QMainWindow):
     def _on_status_line(self, text: str) -> None:
         self._latest_status_line = text
         if not self._error_active:
-            self.top_bar.set_status_line(text)
+            self._refresh_topbar_clock()
+
+    def _refresh_topbar_clock(self) -> None:
+        now = datetime.now().strftime("%H:%M")
+        self.top_bar.set_status_line(f"{self._latest_status_line}  |  {now}")
 
     def _on_error(self, msg: str) -> None:
         logger.info(f"[VDA] {msg}")
         if msg == "ALL CLEAR":
             self._error_active = False
-            self.top_bar.set_status_line(self._latest_status_line)
             return
-        self._error_active = True
-        self.top_bar.set_error_line(msg)
+        # Keep top-right line battery-only; errors are logged and can be
+        # surfaced elsewhere (dialogs/diagnostics panels) without replacing BAT.
+        self._error_active = False
 
     def _on_tch_mode_map_visual(self, mode: str) -> None:
         self.map_view.set_teach_recording_poly_mode(str(mode).upper() == "POLY")
@@ -352,22 +418,6 @@ class MainWindow(QMainWindow):
 
     def _on_auto_record_tick(self) -> None:
         self._app_state.tch_log_point()
-
-    def _maybe_auto_record_on_distance(
-        self, _x: float, _y: float, _theta: float, _speed: float
-    ) -> None:
-        if not self._app_state.tch_auto_record:
-            return
-        if not self._app_state.tch_points:
-            return
-        dist = self._app_state.tch_distance_since_last_point_m()
-        if dist is None or dist < _AUTO_RECORD_MIN_DISTANCE_M:
-            return
-        now = time.monotonic()
-        if now - self._last_auto_distance_log_mono < _AUTO_RECORD_MIN_INTERVAL_S:
-            return
-        if self._app_state.tch_log_point():
-            self._last_auto_distance_log_mono = now
 
     def _on_tch_error(self, msg: str) -> None:
         QMessageBox.warning(self, "Teach-In", msg)
@@ -521,6 +571,8 @@ class MainWindow(QMainWindow):
         self._app_state.tch_log_point()
 
     def _on_auto_record_toggle(self) -> None:
+        if self._app_state.tch_mode == "POLY":
+            return
         self._app_state.tch_toggle_auto_record()
 
     def _on_teach_undo(self) -> None:
@@ -577,7 +629,7 @@ class MainWindow(QMainWindow):
         g = self.config.get("general") or {}
         manufacturer = str(g.get("manufacturer", "MowbotTech"))
         serial_number = str(g.get("serial_number", "mowbot_001"))
-        map_id = str(g.get("map_id") or "mowbot_field")
+        map_id = "mowbot_field"
         try:
             order = build_path_order(
                 exec_coords,

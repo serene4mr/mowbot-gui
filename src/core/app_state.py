@@ -10,15 +10,23 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timezone
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
+from core.sensor_diagnostics import (
+    SensorStatus,
+    sensor_health_to_payload,
+    sensor_status_from_payload,
+)
 from utils.geometry import (
+    corner_indices,
+    dedupe_by_min_distance,
     haversine_distance_m,
     new_edge_intersects_existing,
     polygon_area_m2,
     polygon_has_self_intersection,
+    rdp_keep_indices,
 )
 from utils.logger import logger
 
@@ -37,6 +45,7 @@ class AppState(QObject):
     position_changed = Signal(float, float, float, float)  # x, y, theta_rad, speed
     mode_changed = Signal(str)
     sensor_diag_changed = Signal(str)
+    sensor_health_changed = Signal(dict)  # hardware_id -> SensorStatus wire dicts
     error_changed = Signal(str)
     driving_changed = Signal(bool)
     paused_changed = Signal(bool)
@@ -79,11 +88,17 @@ class AppState(QObject):
         poly_max_close_gap_m: float = 5.0,
         poly_min_area_m2: float = 0.0,
         poly_reject_self_intersection: bool = True,
+        post_process_enable: bool = True,
+        post_process_min_dist_m: float = 0.2,
+        post_process_corner_threshold_deg: float = 15.0,
+        post_process_rdp_epsilon_path_m: float = 0.2,
+        post_process_rdp_epsilon_poly_m: float = 0.15,
     ):
         super().__init__(parent)
         self._mqtt_ok: bool = False
         self._battery_pct: Optional[float] = None
         self._sensor_diag: str = "--"
+        self._sensor_health: Dict[str, SensorStatus] = {}
         self._operating_mode: Optional[str] = None
         self._last_error: Optional[str] = None
         self._driving: bool = False
@@ -112,6 +127,29 @@ class AppState(QObject):
         except (TypeError, ValueError):
             self._poly_min_area_m2 = 0.0
         self._poly_reject_self_intersection = bool(poly_reject_self_intersection)
+        self._post_process_enable = bool(post_process_enable)
+        try:
+            self._post_process_min_dist_m = max(0.0, float(post_process_min_dist_m))
+        except (TypeError, ValueError):
+            self._post_process_min_dist_m = 0.2
+        try:
+            self._post_process_corner_threshold_deg = max(
+                0.0, float(post_process_corner_threshold_deg)
+            )
+        except (TypeError, ValueError):
+            self._post_process_corner_threshold_deg = 15.0
+        try:
+            self._post_process_rdp_epsilon_path_m = max(
+                0.0, float(post_process_rdp_epsilon_path_m)
+            )
+        except (TypeError, ValueError):
+            self._post_process_rdp_epsilon_path_m = 0.2
+        try:
+            self._post_process_rdp_epsilon_poly_m = max(
+                0.0, float(post_process_rdp_epsilon_poly_m)
+            )
+        except (TypeError, ValueError):
+            self._post_process_rdp_epsilon_poly_m = 0.15
 
         # PATH execute: track one active order until completed or cleared
         self._active_order_id: str = ""
@@ -136,6 +174,10 @@ class AppState(QObject):
     @property
     def sensor_diag(self) -> str:
         return self._sensor_diag
+
+    @property
+    def sensor_health(self) -> Dict[str, SensorStatus]:
+        return dict(self._sensor_health)
 
     @property
     def operating_mode(self) -> Optional[str]:
@@ -223,6 +265,26 @@ class AppState(QObject):
             self._sensor_diag = formatted
             self.sensor_diag_changed.emit(formatted)
             self._refresh_status_line()
+
+    def set_sensor_health(self, payload: Dict[str, Any]) -> None:
+        """Update deep diagnostics from VDA5050 bridge (dict of wire-format sensor rows)."""
+        if not payload:
+            return
+        rebuilt: Dict[str, SensorStatus] = {}
+        for hid, row in payload.items():
+            if not isinstance(row, dict):
+                continue
+            key = str(hid).strip().upper()
+            if not key:
+                continue
+            st = sensor_status_from_payload(row)
+            st.hardware_id = key
+            rebuilt[key] = st
+        if rebuilt == self._sensor_health:
+            return
+        self._sensor_health = rebuilt
+        self.sensor_health_changed.emit(sensor_health_to_payload(rebuilt))
+        self._refresh_status_line()
 
     def set_error(self, msg: str) -> None:
         if msg != self._last_error:
@@ -433,6 +495,9 @@ class AppState(QObject):
             return
         if m != self._tch_mode:
             self._tch_mode = m
+            if m == "POLY" and self._tch_auto_record:
+                # Auto-record is PATH-only; force OFF when switching to POLY.
+                self.tch_set_auto_record(False)
             self.tch_mode_changed.emit(m)
             self._emit_tch_stats()
 
@@ -440,6 +505,8 @@ class AppState(QObject):
         self.tch_set_auto_record(not self._tch_auto_record)
 
     def tch_set_auto_record(self, on: bool) -> None:
+        if on and self._tch_mode == "POLY":
+            return
         if on != self._tch_auto_record:
             self._tch_auto_record = on
             self.tch_auto_record_changed.emit(on)
@@ -480,29 +547,30 @@ class AppState(QObject):
         self.tch_cleared.emit()
         self._emit_tch_stats()
 
-    def validate_teach_save(self) -> Optional[str]:
+    def validate_teach_save(
+        self, points: Optional[List[Tuple[float, float, float]]] = None
+    ) -> Optional[str]:
         """Return error message if save is not allowed, else None."""
-        if self._tch_mode == "PATH" and len(self._tch_points) < 2:
+        pts = self._tch_points if points is None else list(points)
+        if self._tch_mode == "PATH" and len(pts) < 2:
             return "PATH requires at least 2 waypoints."
-        if self._tch_mode == "POLY" and len(self._tch_points) < 3:
+        if self._tch_mode == "POLY" and len(pts) < 3:
             return "POLY requires at least 3 waypoints."
         if (
             self._tch_mode == "POLY"
             and self._poly_max_close_gap_m > 0
-            and len(self._tch_points) >= 3
+            and len(pts) >= 3
         ):
-            first = self._tch_points[0][:2]
-            last = self._tch_points[-1][:2]
+            first = pts[0][:2]
+            last = pts[-1][:2]
             gap_m = haversine_distance_m(first, last)
             if gap_m > self._poly_max_close_gap_m:
                 return (
                     f"POLY cannot be saved: first and last point are {gap_m:.1f} m apart "
                     f"(max {self._poly_max_close_gap_m:.1f} m to close the loop)."
                 )
-        if self._tch_mode == "POLY" and self._poly_min_area_m2 > 0 and len(
-            self._tch_points
-        ) >= 3:
-            area = polygon_area_m2([(p[0], p[1]) for p in self._tch_points])
+        if self._tch_mode == "POLY" and self._poly_min_area_m2 > 0 and len(pts) >= 3:
+            area = polygon_area_m2([(p[0], p[1]) for p in pts])
             if area < self._poly_min_area_m2:
                 return (
                     f"POLY cannot be saved: area is {area:.1f} m² "
@@ -511,9 +579,9 @@ class AppState(QObject):
         if (
             self._tch_mode == "POLY"
             and self._poly_reject_self_intersection
-            and len(self._tch_points) >= 4
+            and len(pts) >= 4
         ):
-            pts_2d = [(p[0], p[1]) for p in self._tch_points]
+            pts_2d = [(p[0], p[1]) for p in pts]
             if polygon_has_self_intersection(pts_2d):
                 return (
                     "POLY cannot be saved: boundary edges cross each other "
@@ -521,9 +589,40 @@ class AppState(QObject):
                 )
         return None
 
+    def _simplify_teach_points(
+        self, points: List[Tuple[float, float, float]]
+    ) -> List[Tuple[float, float, float]]:
+        if not self._post_process_enable or len(points) < 3:
+            return list(points)
+
+        latlon = [(p[0], p[1]) for p in points]
+        keep = set(dedupe_by_min_distance(latlon, self._post_process_min_dist_m))
+        keep.update(corner_indices(latlon, self._post_process_corner_threshold_deg))
+        eps = (
+            self._post_process_rdp_epsilon_poly_m
+            if self._tch_mode == "POLY"
+            else self._post_process_rdp_epsilon_path_m
+        )
+        keep.update(rdp_keep_indices(latlon, eps))
+
+        keep.add(0)
+        keep.add(len(points) - 1)
+        indices = sorted(i for i in keep if 0 <= i < len(points))
+        out = [points[i] for i in indices]
+        if self._tch_mode == "PATH" and len(out) < 2:
+            return [points[0], points[-1]]
+        if self._tch_mode == "POLY" and len(out) < 3:
+            return list(points)
+        return out
+
     def teach_save_to_disk(self, missions_dir: str) -> Tuple[Optional[str], str]:
         """Write mission JSON; clear session. Returns (filename, error)."""
         err = self.validate_teach_save()
+        if err:
+            return None, err
+        raw_points = list(self._tch_points)
+        save_points = self._simplify_teach_points(raw_points)
+        err = self.validate_teach_save(save_points)
         if err:
             return None, err
 
@@ -535,7 +634,7 @@ class AppState(QObject):
 
         coords = [
             [lat, lon, round(theta, 4)]
-            for lat, lon, theta in self._tch_points
+            for lat, lon, theta in save_points
         ]
         payload = {
             "type": self._tch_mode,
@@ -550,6 +649,16 @@ class AppState(QObject):
                 json.dump(payload, f, indent=2)
         except OSError as exc:
             return None, f"Could not save mission file: {exc}"
+
+        if self._post_process_enable:
+            logger.info(
+                "[TeachIn] post-process reduced waypoints: "
+                f"{len(raw_points)} -> {len(save_points)} "
+                f"(mode={self._tch_mode}, min_dist_m={self._post_process_min_dist_m}, "
+                f"corner_deg={self._post_process_corner_threshold_deg}, "
+                f"rdp_path_m={self._post_process_rdp_epsilon_path_m}, "
+                f"rdp_poly_m={self._post_process_rdp_epsilon_poly_m})"
+            )
 
         self._tch_points.clear()
         self._emit_tch_stats()
@@ -578,10 +687,15 @@ class AppState(QObject):
     def _refresh_status_line(self) -> None:
         bat = self._battery_pct
         bat_s = f"{bat:.0f}%" if bat is not None else "--"
-        mqtt_s = "OK" if self._mqtt_ok else "OFF"
-        self.status_line_changed.emit(
-            f"{self._sensor_diag} | BAT: {bat_s} | MQTT: {mqtt_s}"
-        )
+        gnss_state = "--"
+        gnss = self._sensor_health.get("GNSS")
+        if gnss is not None:
+            fix = str(gnss.metrics.get("fix_type", "") or "").strip()
+            if fix:
+                gnss_state = fix
+            else:
+                gnss_state = str(gnss.level or "--").strip().upper()
+        self.status_line_changed.emit(f"GNSS: {gnss_state} | BAT: {bat_s}")
 
     @staticmethod
     def _format_sensor_diag(sensor_diag: str) -> str:

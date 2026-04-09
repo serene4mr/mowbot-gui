@@ -50,11 +50,11 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
             config = deep_merge(config, ext_config)
 
     # 4. Environment Variable Overrides (highest priority)
+    # Supported env vars are intentionally restricted.
     env_override = {
         "general": {
             "manufacturer": os.getenv("MBGUI_MANUFACTURER"),
             "serial_number": os.getenv("MBGUI_SERIAL_NUMBER"),
-            "map_id": os.getenv("MBGUI_MAP_ID"),
         },
         "broker": {
             "host": os.getenv("MBGUI_MQTT_HOST"),
@@ -63,47 +63,10 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
             "user": os.getenv("MBGUI_MQTT_USER"),
             "password": os.getenv("MBGUI_MQTT_PASSWORD"),
         },
-        "teach_in": {
-            "poly_max_close_gap_m": _to_float_or_none(
-                os.getenv("MBGUI_TEACH_POLY_MAX_CLOSE_GAP_M")
-            ),
-            "poly_min_area_m2": _to_float_or_none(
-                os.getenv("MBGUI_TEACH_POLY_MIN_AREA_M2")
-            ),
-            "poly_reject_self_intersection": _to_bool_or_none(
-                os.getenv("MBGUI_TEACH_POLY_REJECT_SELF_INTERSECTION")
-            ),
-        },
-        "coverage": {
-            "mow_width_m": _to_float_or_none(os.getenv("MBGUI_COVERAGE_MOW_WIDTH_M")),
-            "overlap_pct": _to_float_or_none(os.getenv("MBGUI_COVERAGE_OVERLAP_PCT")),
-            "sweep_angle_deg": _to_float_or_none(
-                os.getenv("MBGUI_COVERAGE_SWEEP_ANGLE_DEG")
-            ),
-            "max_waypoints": _to_int_or_none(os.getenv("MBGUI_COVERAGE_MAX_WAYPOINTS")),
-            "min_turn_radius_m": _to_float_or_none(
-                os.getenv("MBGUI_COVERAGE_MIN_TURN_RADIUS_M")
-            ),
-            "stripe_point_spacing_m": _to_float_or_none(
-                os.getenv("MBGUI_COVERAGE_STRIPE_POINT_SPACING_M")
-            ),
-        },
-        "docker_reset_on_startup": _to_bool_or_none(
-            os.getenv("MBGUI_DOCKER_RESET_ON_STARTUP")
-        ),
     }
     config = deep_merge(config, _drop_nones_recursive(env_override))
 
     return config
-
-
-def _to_float_or_none(value: Any) -> Any:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _to_int_or_none(value: Any) -> Any:

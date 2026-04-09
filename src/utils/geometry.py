@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Set, Tuple
 
 Pair = Tuple[float, float]  # (lat_deg, lon_deg)
 
@@ -136,3 +136,98 @@ def new_edge_intersects_existing(points: List[Pair]) -> bool:
         if segments_intersect(points[i], points[i + 1], new_a, new_b):
             return True
     return False
+
+
+def dedupe_by_min_distance(points: List[Pair], min_dist_m: float) -> List[int]:
+    """Return kept indices after distance-based decimation.
+
+    Keeps first and last points when input is non-empty.
+    """
+    n = len(points)
+    if n == 0:
+        return []
+    if n == 1:
+        return [0]
+    if min_dist_m <= 0:
+        return list(range(n))
+
+    kept: List[int] = [0]
+    last_kept = 0
+    for i in range(1, n - 1):
+        if haversine_distance_m(points[last_kept], points[i]) >= min_dist_m:
+            kept.append(i)
+            last_kept = i
+    if kept[-1] != n - 1:
+        kept.append(n - 1)
+    return kept
+
+
+def corner_indices(points: List[Pair], threshold_deg: float) -> Set[int]:
+    """Return interior indices where turn angle exceeds threshold."""
+    n = len(points)
+    if n < 3 or threshold_deg <= 0:
+        return set()
+
+    ref = points[0]
+    out: Set[int] = set()
+    for i in range(1, n - 1):
+        x0, y0 = latlon_to_xy_m(points[i - 1][0], points[i - 1][1], ref)
+        x1, y1 = latlon_to_xy_m(points[i][0], points[i][1], ref)
+        x2, y2 = latlon_to_xy_m(points[i + 1][0], points[i + 1][1], ref)
+        ax, ay = x0 - x1, y0 - y1
+        bx, by = x2 - x1, y2 - y1
+        ma = math.hypot(ax, ay)
+        mb = math.hypot(bx, by)
+        if ma < 1e-6 or mb < 1e-6:
+            continue
+        cos_val = max(-1.0, min(1.0, (ax * bx + ay * by) / (ma * mb)))
+        angle = math.degrees(math.acos(cos_val))
+        turn = abs(180.0 - angle)
+        if turn >= threshold_deg:
+            out.add(i)
+    return out
+
+
+def rdp_keep_indices(points: List[Pair], epsilon_m: float) -> Set[int]:
+    """Return point indices selected by RDP in local XY meter space."""
+    n = len(points)
+    if n == 0:
+        return set()
+    if n <= 2 or epsilon_m <= 0:
+        return set(range(n))
+
+    ref = points[0]
+    xy = [latlon_to_xy_m(lat, lon, ref) for lat, lon in points]
+
+    keep: Set[int] = {0, n - 1}
+
+    def _point_line_distance(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
+        vx, vy = bx - ax, by - ay
+        wx, wy = px - ax, py - ay
+        vv = vx * vx + vy * vy
+        if vv < 1e-12:
+            return math.hypot(px - ax, py - ay)
+        t = max(0.0, min(1.0, (wx * vx + wy * vy) / vv))
+        cx, cy = ax + t * vx, ay + t * vy
+        return math.hypot(px - cx, py - cy)
+
+    def _rdp(lo: int, hi: int) -> None:
+        if hi <= lo + 1:
+            return
+        ax, ay = xy[lo]
+        bx, by = xy[hi]
+        max_d = -1.0
+        idx = -1
+        for i in range(lo + 1, hi):
+            px, py = xy[i]
+            d = _point_line_distance(px, py, ax, ay, bx, by)
+            if d > max_d:
+                max_d = d
+                idx = i
+        if max_d > epsilon_m and idx > lo:
+            keep.add(idx)
+            _rdp(lo, idx)
+            _rdp(idx, hi)
+
+    _rdp(0, n - 1)
+    return keep

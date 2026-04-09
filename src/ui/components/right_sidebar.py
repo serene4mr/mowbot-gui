@@ -431,9 +431,14 @@ class RightSidebar(QFrame):
         if m == "POLY":
             self.btn_tch_poly.setChecked(True)
             self.btn_tch_path.setChecked(False)
+            self.btn_auto.setEnabled(False)
+            self.btn_auto.setToolTip("AUTO-RECORD is available only in PATH mode.")
+            self.set_auto_record_ui(False)
         else:
             self.btn_tch_path.setChecked(True)
             self.btn_tch_poly.setChecked(False)
+            self.btn_auto.setEnabled(True)
+            self.btn_auto.setToolTip("")
 
     def update_tch_stats(self, waypoint_count: int, area_m2: float) -> None:
         self.lbl_tch_waypoints.setText(f"Waypoints: {waypoint_count}")

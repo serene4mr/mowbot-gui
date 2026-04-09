@@ -30,7 +30,7 @@ BUTTON_EXECUTE = "#00C853"
 TOPBAR_HEIGHT = 50
 OVERLAY_MARGIN = 20
 HUD_WIDTH = 320
-HUD_HEIGHT = 210
+HUD_HEIGHT = 340
 SIDEBAR_WIDTH = 350
 
 # ── Font sizes (px) ──────────────────────────────────────────

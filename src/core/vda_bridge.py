@@ -17,6 +17,11 @@ from vda5050.models.state import State
 from vda5050.models.base import Action, BlockingType
 from vda5050.models.instant_action import InstantActions
 from vda5050.models.order import Order
+from core.sensor_diagnostics import (
+    format_vda_error_for_top_bar,
+    parse_sensor_entries,
+    sensor_health_to_payload,
+)
 from utils.logger import logger
 
 
@@ -32,6 +37,7 @@ class VDA5050BridgeThread(QThread):
     driving_status = Signal(bool)
     safety_updated = Signal(str)
     sensor_diag_updated = Signal(str)
+    sensor_health_updated = Signal(dict)  # hardware_id -> SensorStatus wire dicts
     error_updated = Signal(str)
     navigation_failed = Signal(str, str)  # description, hint
     paused_updated = Signal(bool)
@@ -180,11 +186,22 @@ class VDA5050BridgeThread(QThread):
                     self.sensor_diag_updated.emit(info.infoDescription)
                     break
 
+        deep = parse_sensor_entries(state.information, state.errors)
+        if deep:
+            self.sensor_health_updated.emit(sensor_health_to_payload(deep))
+
         if state.errors:
             fatal = [e for e in state.errors if self._enum_name(e.errorLevel) == "FATAL"]
             if fatal:
                 first_fatal = fatal[0]
-                self.error_updated.emit(f"FATAL: {first_fatal.errorDescription}")
+                self.error_updated.emit(
+                    format_vda_error_for_top_bar(
+                        str(getattr(first_fatal, "errorType", "") or ""),
+                        getattr(first_fatal, "errorDescription", None),
+                        getattr(first_fatal, "errorReferences", None),
+                        "FATAL",
+                    )
+                )
                 if self._enum_name(getattr(first_fatal, "errorType", "")) == "navigationError":
                     hint = str(getattr(first_fatal, "errorHint", "") or "").strip()
                     self.navigation_failed.emit(
@@ -193,8 +210,14 @@ class VDA5050BridgeThread(QThread):
                         hint,
                     )
             else:
+                w0 = state.errors[0]
                 self.error_updated.emit(
-                    f"WARNING: {state.errors[0].errorDescription}"
+                    format_vda_error_for_top_bar(
+                        str(getattr(w0, "errorType", "") or ""),
+                        getattr(w0, "errorDescription", None),
+                        getattr(w0, "errorReferences", None),
+                        "WARNING",
+                    )
                 )
         else:
             self.error_updated.emit("ALL CLEAR")
