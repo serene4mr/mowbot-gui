@@ -1,4 +1,5 @@
 
 
-DISPLAY=:1 MBGUI_MQTT_HOST=192.168.10.100 \
+DISPLAY=:1 MBGUI_FULLSCREEN=0 MBGUI_BORDERLESS=0 \
+MBGUI_MQTT_HOST=192.168.10.100 \
 MBGUI_CONFIG=/workspaces/mowbot-gui/mowbot_data/gui/config.yaml python src/main.py
