@@ -7,24 +7,35 @@
             "USERNAME": "${localEnv:USER}"
         },
         "options": [
-            "-t", "mowbot_gui",
-            "--pull=true",
-            "--build-arg", "BASE_IMAGE=ghcr.io/serene4mr/mowbot-gui:latest"
+            "-t",
+            "mowbot_gui",
+            "--pull=false",
+            "--build-arg",
+            "BASE_IMAGE=ghcr.io/serene4mr/mowbot-gui:latest"
         ]
     },
     "remoteUser": "${localEnv:USER}",
     "updateRemoteUserUID": true,
     "runArgs": [
-        "--name", "mowbot_gui_dev",
-        "--net", "host",
+        "--name",
+        "mowbot_gui_dev",
+        "--net",
+        "host",
         "--privileged",
         "--group-add=133",
-        "-v", "/dev:/dev",
-        "-v", "/dev/shm:/dev/shm",
-        "-v", "/tmp/.X11-unix:/tmp/.X11-unix",
-        "-v", "/var/run/docker.sock:/var/run/docker.sock",
-        "-v", "${localEnv:HOME}/mowbot_data:${containerWorkspaceFolder}/mowbot_data",
-        "-e", "DISPLAY"
+        "--group-add=984",
+        "-v",
+        "/dev:/dev",
+        "-v",
+        "/dev/shm:/dev/shm",
+        "-v",
+        "/tmp/.X11-unix:/tmp/.X11-unix",
+        "-v",
+        "/var/run/docker.sock:/var/run/docker.sock",
+        "-v",
+        "${localEnv:HOME}/mowbot_data:${containerWorkspaceFolder}/mowbot_data",
+        "-e",
+        "DISPLAY"
     ],
     "customizations": {
         "vscode": {
@@ -33,4 +44,4 @@
             ]
         }
     }
-  }
+}

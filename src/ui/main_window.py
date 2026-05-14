@@ -77,11 +77,17 @@ def _with_tangent_theta(path_latlon: List[Tuple[float, float]]) -> List[Tuple[fl
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        *,
+        borderless: bool = True,
+    ):
         super().__init__()
         self.config = config or {}
-        self.setWindowFlags(Qt.FramelessWindowHint)
-        self.setWindowTitle("Mowbot Control GUMI")
+        if borderless:
+            self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setWindowTitle("Mowbot Control")
         self.resize(1280, 800)
         self.setStyleSheet(theme.MAIN_WINDOW_STYLE)
 

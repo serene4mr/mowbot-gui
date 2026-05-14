@@ -32,6 +32,19 @@ from utils.config import load_config
 from utils.logger import logger
 
 
+def _mbgui_env_on(name: str) -> bool:
+    """Parse MBGUI_* binary env vars: unset → True; ``0`` → False; ``1`` → True."""
+    raw = os.environ.get(name)
+    if raw is None or not str(raw).strip():
+        return True
+    v = str(raw).strip()
+    if v == "0":
+        return False
+    if v == "1":
+        return True
+    return True
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="MowBot GUI")
     parser.add_argument(
@@ -57,9 +70,13 @@ def main():
     # Optional: Apply global dark theme stylesheet here
     # app.setStyleSheet(open("assets/styles/dark_theme.qss").read())
 
-    # Create and show the Main Window
-    window = MainWindow(config=config)
-    window.showFullScreen()
+    borderless = _mbgui_env_on("MBGUI_BORDERLESS")
+    fullscreen = _mbgui_env_on("MBGUI_FULLSCREEN")
+    window = MainWindow(config=config, borderless=borderless)
+    if fullscreen:
+        window.showFullScreen()
+    else:
+        window.show()
 
     def _graceful_shutdown(signum, _frame):
         signal_name = signal.Signals(signum).name

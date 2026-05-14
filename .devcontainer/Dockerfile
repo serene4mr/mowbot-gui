@@ -9,7 +9,7 @@ ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 
 # Ensure required CLI tools and sudoers directory exist in slim images
-RUN apt-get update && apt-get install -y --no-install-recommends sudo docker.io \
+RUN apt-get update && apt-get install -y --no-install-recommends sudo docker.io wget curl procps\
   && mkdir -p /etc/sudoers.d \
   && rm -rf /var/lib/apt/lists/*
 

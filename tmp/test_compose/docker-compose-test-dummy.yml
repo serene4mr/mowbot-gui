@@ -1,0 +1,41 @@
+# Detached: docker compose up -d  (from this directory, add -f if needed)
+services:
+  mowbot_uros_agent:
+    image: alpine:latest
+    container_name: mowbot_uros_agent
+    network_mode: host
+    command:
+      - sleep
+      - infinity
+
+  mowbot_bringup_and_sensing:
+    image: alpine:latest
+    container_name: mowbot_bringup_and_sensing
+    network_mode: host
+    command:
+      - sleep
+      - infinity
+
+  mowbot_localization:
+    image: alpine:latest
+    container_name: mowbot_localization
+    network_mode: host
+    command:
+      - sleep
+      - infinity
+
+  mowbot_navigation:
+    image: alpine:latest
+    container_name: mowbot_navigation
+    network_mode: host
+    command:
+      - sleep
+      - infinity
+
+  mowbot_app:
+    image: alpine:latest
+    container_name: mowbot_app
+    network_mode: host
+    command:
+      - sleep
+      - infinity
